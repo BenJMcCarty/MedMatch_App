@@ -1,0 +1,48 @@
+[theme]
+# Force dark base theme for the entire application.
+base = "dark"
+
+[client]
+# Toolbar configuration for professional appearance
+# toolbarMode = "minimal"
+
+# Streamlit Cloud Configuration
+# Official configuration for professional deployment
+
+[server]
+# Disable file watching in cloud environment (prevents warnings)
+fileWatcherType = "none"
+
+# Cloud deployment settings
+headless = true
+runOnSave = true
+enableCORS = false
+enableXsrfProtection = false
+
+# Port configuration (Streamlit Cloud handles this automatically)
+port = 8501
+
+[browser]
+# Disable usage statistics collection for privacy
+gatherUsageStats = false
+
+[runner]
+# Disable magic commands for security and performance
+magicEnabled = false
+
+# Enable fast re-run for better user experience
+fastReruns = true
+
+[logger]
+# Set appropriate log level for production
+level = "info"
+
+# Log message format
+messageFormat = "%(asctime)s %(message)s"
+
+[global]
+# Development vs Production settings
+developmentMode = false
+
+# Performance optimizations
+maxCachedMessageAge = 2
