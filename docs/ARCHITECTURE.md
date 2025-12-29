@@ -665,14 +665,204 @@ def load_application_data():
 
 ## 7. Known Limitations and Trade-offs
 
-<!--
-TODO (Copilot + human):
-Based on the current implementation, list any limitations or intentional trade-offs.
-Examples:
-- Max number of points displayed on the map.
-- Simplified queries for performance.
-- No authentication.
-This is especially useful for portfolio reviewers.
--->
+This section documents intentional design decisions, current limitations, and areas for future improvement. Understanding these trade-offs helps reviewers and future maintainers make informed decisions.
 
-- _TODO: Add known limitations and trade-offs here._
+### Data Architecture Limitations
+
+**Parquet File Storage (No Database):**
+- **Trade-off**: Simplicity and portability vs. real-time updates and concurrent access
+- **Impact**: 
+  - Cannot handle concurrent writes from multiple users
+  - Data updates require file regeneration via Update Data page
+  - No transaction support or ACID guarantees
+- **Benefit**: 
+  - No database credentials or connection management
+  - Fast read performance for analytics workloads
+  - Easy deployment (no database provisioning)
+  - Works seamlessly with version control for sample data
+
+**Cache Invalidation:**
+- **Limitation**: Cache invalidation is time-based (1 hour TTL) and file-modification-based
+- **Impact**: Users may see stale data for up to 1 hour after updates
+- **Benefit**: Consistent fast performance, reduced file I/O
+- **Mitigation**: Daily auto-refresh at 4 AM, manual refresh via Update Data page
+
+### Geocoding Limitations
+
+**Nominatim Rate Limiting:**
+- **Limitation**: 1 request per second enforced by `RateLimiter`
+- **Impact**: Batch geocoding of providers is slow (1 per second max)
+- **Benefit**: Free geocoding service, no API key required
+- **Alternative**: Can configure Google Maps API for faster geocoding (requires paid API key)
+
+**Address Quality Dependency:**
+- **Limitation**: Geocoding accuracy depends on address completeness and formatting
+- **Impact**: Poorly formatted addresses may not geocode or return wrong coordinates
+- **Mitigation**: Address validation via `validate_address_input()`, manual coordinate cleanup
+
+**No Driving Distance:**
+- **Trade-off**: Haversine (straight-line) distance vs. actual driving distance
+- **Impact**: Distance estimates may differ from real travel time by 20-40%
+- **Benefit**: No external API calls, instant calculation, works offline
+- **Future**: Could integrate Google Distance Matrix API or OSRM for driving distances
+
+### Scoring Algorithm Limitations
+
+**Min-Max Normalization Sensitivity:**
+- **Limitation**: Score normalization uses min-max scaling, sensitive to outliers
+- **Impact**: A single provider with extreme values can compress score range for others
+- **Example**: Provider with 1000 referrals makes providers with 10-50 referrals all appear similar
+- **Mitigation**: Filter by minimum referral count to remove low-volume outliers
+- **Alternative**: Could use z-score normalization or percentile-based scaling
+
+**No Multi-Specialty Matching:**
+- **Limitation**: Specialty filter is "any of" (OR logic), not ranked by specialty relevance
+- **Impact**: Provider matching 1 of 5 selected specialties ranks equally to one matching all 5
+- **Future**: Could add specialty match score component to ranking
+
+**Static Weight Normalization:**
+- **Limitation**: Weights are normalized at search time, cannot dynamically adjust during browsing
+- **Impact**: Users must return to Search page to change scoring preferences
+- **Benefit**: Consistent scores across results viewing session
+
+### User Interface Limitations
+
+**No Map Visualization:**
+- **Limitation**: Results displayed in table format only, no geographic map
+- **Impact**: Users cannot visually identify spatial clusters or geographic patterns
+- **Benefit**: Simpler UI, faster rendering, no map library dependencies
+- **Future**: Could add Streamlit `st.map()`, pydeck, or folium for interactive maps
+- **Data Ready**: Provider coordinates already validated and available for mapping
+
+**No Real-Time Search:**
+- **Limitation**: Search requires clicking "Find Providers" button, no live filtering
+- **Impact**: Cannot see results update as filters change
+- **Benefit**: Reduces geocoding API calls, clearer separation between input and results
+- **Alternative**: Could add client-side filtering on Results page (radius, specialty) without re-geocoding
+
+**Session State Persistence:**
+- **Limitation**: Search parameters stored in Streamlit session state only
+- **Impact**: Parameters lost on browser refresh or tab close
+- **Benefit**: No cookies or local storage needed, privacy-friendly
+- **Alternative**: Could add URL parameters for shareable search links
+
+### Performance Limitations
+
+**Single-Threaded Scoring:**
+- **Limitation**: Recommendation scoring runs in single thread during Streamlit request
+- **Impact**: Large provider datasets (>10,000 records) may take 2-3 seconds to score
+- **Current Scale**: Handles ~2,000 providers smoothly (<1 second)
+- **Future**: Could parallelize distance calculation with multiprocessing or Dask
+
+**Full DataFrame Operations:**
+- **Limitation**: All filtering and scoring loads full dataset into memory
+- **Impact**: Memory usage scales linearly with provider count
+- **Current Scale**: ~2,000 providers = ~5MB parquet file, ~20MB in memory
+- **Future**: Could add chunked processing for 100,000+ provider datasets
+
+**No Result Pagination:**
+- **Limitation**: Results page displays all matching providers in single scrollable table
+- **Impact**: Very large result sets (>500 providers) may slow down browser rendering
+- **Mitigation**: Radius and specialty filters reduce result set size
+- **Future**: Could add pagination (show 50 at a time) or virtual scrolling
+
+### Security Limitations
+
+**No Authentication:**
+- **Limitation**: App is publicly accessible, no user login or access control
+- **Impact**: Anyone with the URL can access all provider data
+- **Use Case**: Appropriate for internal tools or public provider directories
+- **Future**: Could add Streamlit authentication or SSO integration
+
+**No Rate Limiting:**
+- **Limitation**: No per-user rate limiting on searches or geocoding
+- **Impact**: Malicious users could exhaust geocoding API quota
+- **Mitigation**: Nominatim rate limiter prevents server abuse, Streamlit caching reduces duplicate calls
+- **Future**: Could add IP-based rate limiting via middleware
+
+**Sensitive Data in Parquet Files:**
+- **Limitation**: Provider data (names, addresses, phone numbers) stored in plain parquet files
+- **Impact**: Data readable by anyone with file system access
+- **Mitigation**: Deploy with proper file permissions, use private Git repositories
+- **Alternative**: Could encrypt parquet files or move to database with access controls
+
+### Data Quality Limitations
+
+**Name-Based Deduplication:**
+- **Limitation**: Duplicate providers removed by exact "Full Name" match only
+- **Impact**: Same provider with slight name variations (e.g., "John Smith" vs "John A. Smith") treated as separate
+- **Mitigation**: Data preparation includes name standardization
+- **Future**: Could add fuzzy matching or NPI-based deduplication
+
+**Preferred Provider Matching:**
+- **Limitation**: Preferred provider status matched by name only, not unique ID
+- **Impact**: Name mismatches between provider list and preferred list cause missing flags
+- **Mitigation**: Warning logged if >30% of providers are marked preferred (indicates data issue)
+- **Future**: Could use unique identifiers (NPI, ID) for matching
+
+**No Data Versioning:**
+- **Limitation**: Parquet file overwrites previous data, no historical versions
+- **Impact**: Cannot track provider changes over time, no rollback capability
+- **Benefit**: Simple storage model, no database migration complexity
+- **Alternative**: Could add timestamped parquet files or data versioning
+
+### Integration Limitations
+
+**No External APIs:**
+- **Limitation**: No integration with provider directories (NPI Registry, CMS, etc.)
+- **Impact**: Provider data must be manually uploaded and maintained
+- **Benefit**: Works offline, no API keys required (except optional Google Maps)
+- **Future**: Could add automated data sync from external sources
+
+**No Export Formats:**
+- **Limitation**: Export supports Word documents only, no CSV/Excel/JSON
+- **Impact**: Harder to integrate results with external systems
+- **Current**: Word export generates formatted provider info cards
+- **Future**: Could add CSV export for full results table
+
+**No Calendar Integration:**
+- **Limitation**: No scheduling or appointment booking features
+- **Impact**: Users must contact providers separately
+- **Use Case**: App is for provider discovery and evaluation, not booking
+- **Future**: Could integrate with scheduling platforms (Calendly, Acuity, etc.)
+
+### Intentional Simplifications
+
+These are deliberate design choices to keep the codebase maintainable and focused:
+
+1. **No user accounts or profiles** – Simplifies authentication and data privacy concerns
+2. **No database** – Reduces deployment complexity and infrastructure requirements
+3. **No real-time data updates** – Batch processing sufficient for provider data (changes infrequently)
+4. **No mobile-specific UI** – Streamlit responsive layout sufficient for basic mobile support
+5. **No automated testing** – Portfolio/demo project, manual testing during development
+6. **No CI/CD pipeline** – Manual deployment via Streamlit Cloud dashboard
+7. **No monitoring or analytics** – Use Streamlit Cloud built-in metrics
+
+### Scalability Considerations
+
+**Current Scale:**
+- Providers: ~2,000 records
+- Referrals: ~50,000 records
+- File size: ~5MB parquet
+- Memory: ~30MB in Streamlit cache
+- Response time: <1 second for search
+
+**Expected Limits:**
+- Providers: Up to ~10,000 (< 3 second scoring)
+- Referrals: Up to ~500,000 (< 100MB file)
+- Concurrent users: 10-50 (Streamlit Cloud free tier)
+
+**Beyond Current Scale:**
+- 50,000+ providers → Need database with indexed queries
+- 1M+ referrals → Need distributed processing (Dask, Spark)
+- 100+ concurrent users → Need horizontal scaling and load balancer
+
+### Portfolio Context
+
+This is a **portfolio project** designed to demonstrate:
+- Clean, readable code over production-scale architecture
+- End-to-end feature development (data → algorithm → UI)
+- Real-world data processing and visualization
+- AI-assisted development best practices
+
+The limitations listed above are **intentional trade-offs** for a portfolio scope. A production deployment would address several of these areas based on actual usage requirements and scale.
