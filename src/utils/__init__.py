@@ -1,4 +1,4 @@
-"""Utilities package for JLG Provider Recommender.
+"""Utilities package for Provider Recommender.
 
 Re-export stable helper functions from the canonical utilities module.
 """

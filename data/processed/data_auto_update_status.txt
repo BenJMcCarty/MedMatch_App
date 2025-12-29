@@ -1,0 +1,1 @@
+✅ Data loading complete: Loaded from local parquet files and cached

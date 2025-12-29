@@ -1,5 +1,5 @@
 """
-Configuration and secrets management for the JLG Provider Recommender app.
+Configuration and secrets management for the Provider Recommender app.
 
 This module provides a centralized way to access application configuration
 and secrets, with proper fallbacks and validation. It demonstrates best
@@ -250,7 +250,7 @@ def get_legacy_credentials() -> Dict[str, str]:
 
 if __name__ == "__main__":
     # Example usage and testing
-    print("JLG Provider Recommender - Configuration Status")
+    print("Provider Recommender - Configuration Status")
     print("=" * 50)
 
     # Validate configuration

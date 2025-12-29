@@ -1,4 +1,4 @@
-# Runtime dependencies for JLG Provider Recommender
+# Runtime dependencies for Provider Recommender
 # Install with: pip install -r requirements.txt
 
 streamlit>=1.18.0

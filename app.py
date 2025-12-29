@@ -3,11 +3,11 @@ Streamlit app entrypoint - Landing page and ETL orchestration.
 
 This module serves as the home/landing page and handles:
 - Navigation to core pages (Search, Dashboard, Update Data)
-- ETL pipeline execution: S3 download → data cleaning → Streamlit cache
+- Data loading pipeline: local parquet files → Streamlit cache
 - Background data refresh on startup and daily at 4 AM
 
-The ETL pipeline uses DataIngestionManager to extract data from S3, transform it via
-preparation.process_referral_data(), and load it into Streamlit's cache with 1-hour TTL.
+The data pipeline uses DataIngestionManager to load data from local parquet files
+and cache it in Streamlit's cache with 1-hour TTL.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Optional, Tuple
 
 import streamlit as st
 
-st.set_page_config(page_title="JLG Provider Recommender", page_icon=":hospital:", layout="wide")
+st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +60,12 @@ def show_auto_update_status():
     Display the auto-update status message if available.
 
     This function can be called from any page to show the result
-    of the automatic S3 data update that occurs on app launch.
+    of the automatic data loading that occurs on app launch.
     """
     # Prefer a status file written by the background updater (safer than
     # accessing session state from background threads). If the file exists,
     # show its content once and then remove it.
-    status_file = Path("data/processed/s3_auto_update_status.txt")
+    status_file = Path("data/processed/data_auto_update_status.txt")
     try:
         if status_file.exists():
             text = status_file.read_text(encoding="utf-8").strip()
@@ -86,66 +86,47 @@ def show_auto_update_status():
         return
 
 
-def auto_update_data_from_s3():
+def auto_update_data():
     """
-    Trigger ETL pipeline on app launch (Extract → Transform → Load).
+    Trigger data loading pipeline on app launch.
 
-    Downloads data from S3, processes it, and warms Streamlit's cache.
-    Falls back to local cache if S3 not configured. Runs in background thread.
-    Writes status to data/processed/s3_auto_update_status.txt for UI display.
+    Loads data from local parquet files and warms Streamlit's cache.
+    Runs in background thread.
+    Writes status to data/processed/data_auto_update_status.txt for UI display.
     """
     # Background worker: avoid Streamlit APIs (no st.* calls)
     # Write status file for main thread to read
-    status_file = Path("data/processed/s3_auto_update_status.txt")
+    status_file = Path("data/processed/data_auto_update_status.txt")
     try:
         from src.data.ingestion import get_data_manager
 
         data_manager = get_data_manager()
 
-        # Check if S3 is configured
-        from src.utils.config import is_api_enabled
-        if not is_api_enabled("s3"):
-            logger.info("S3 not configured - using local cache files if available")
-            try:
-                status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text(
-                    "ℹ️ S3 not configured — using local cache files. "
-                    "Configure S3 in .streamlit/secrets.toml for production use.",
-                    encoding="utf-8"
-                )
-            except Exception:
-                pass
-            try:
-                data_manager.preload_data()
-            except Exception as e:
-                logger.warning(f"Failed to preload data from local files: {e}")
-            return
-
-        logger.info("Starting ETL process: Extract from S3 → Transform → Load to cache...")
+        logger.info("Starting data loading: Load from local parquet files → Cache...")
         try:
             data_manager.preload_data()
-            msg = "✅ ETL complete: Data extracted from S3, transformed, and loaded to cache"
+            msg = "✅ Data loading complete: Loaded from local parquet files and cached"
             logger.info(msg)
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
                 status_file.write_text(msg, encoding="utf-8")
             except Exception:
-                logger.exception("Failed to write ETL status file")
+                logger.exception("Failed to write status file")
         except Exception as e:
-            logger.exception(f"ETL process failed: {e}")
+            logger.exception(f"Data loading process failed: {e}")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text(f"❌ ETL process failed: {e}", encoding="utf-8")
+                status_file.write_text(f"❌ Data loading process failed: {e}", encoding="utf-8")
             except Exception:
                 pass
 
     except ImportError as e:
-        logger.info(f"Data ingestion module not available - skipping ETL process: {e}")
+        logger.info(f"Data ingestion module not available - skipping data loading: {e}")
     except Exception as e:
-        logger.exception(f"Unexpected error during ETL process: {e}")
+        logger.exception(f"Unexpected error during data loading: {e}")
         try:
             status_file.parent.mkdir(parents=True, exist_ok=True)
-            status_file.write_text(f"❌ ETL process failed: {e}", encoding="utf-8")
+            status_file.write_text(f"❌ Data loading process failed: {e}", encoding="utf-8")
         except Exception:
             pass
 
@@ -163,19 +144,19 @@ _nav_items = [
 
 
 def _build_and_run_app():
-    """Build navigation and trigger ETL processes.
+    """Build navigation and trigger data loading processes.
 
-    Orchestrates daily cache refresh (synchronous) and background ETL on app launch.
+    Orchestrates daily cache refresh (synchronous) and background data loading on app launch.
     Intentionally encapsulated to prevent duplicate rendering when pages import app.
     """
 
-    # Check for daily refresh (may trigger full ETL if after 4 AM)
+    # Check for daily refresh (may trigger full data reload if after 4 AM)
     try:
         from src.data.ingestion import get_data_manager
         data_manager = get_data_manager()
         refreshed = data_manager.check_and_refresh_daily_cache()
         if refreshed:
-            logger.info("Daily cache refresh triggered full ETL pipeline")
+            logger.info("Daily cache refresh triggered full data reload")
     except Exception as e:
         logger.warning(f"Could not check daily refresh on app load: {e}")
 
@@ -183,12 +164,12 @@ def _build_and_run_app():
 
     import threading
 
-    # Run ETL pipeline in background thread to avoid blocking app startup
+    # Run data loading in background thread to avoid blocking app startup
     try:
-        thread = threading.Thread(target=auto_update_data_from_s3, daemon=True)
+        thread = threading.Thread(target=auto_update_data, daemon=True)
         thread.start()
     except Exception:
-        auto_update_data_from_s3()  # Fallback to synchronous
+        auto_update_data()  # Fallback to synchronous
 
     pg = st.navigation(nav_pages)
     pg.run()

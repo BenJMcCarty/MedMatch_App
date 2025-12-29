@@ -1,4 +1,4 @@
-"""Data processing package for JLG Provider Recommender."""
+"""Data processing package for Provider Recommender."""
 
 # Import main data functions for backward compatibility
 from .ingestion import (

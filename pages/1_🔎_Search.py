@@ -70,13 +70,13 @@ US_STATES = [
     "DC",
 ]
 
-st.set_page_config(page_title="JLG Provider Recommender", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Provider Recommender", page_icon="🏥", layout="wide")
 
 # Show S3 auto-update status if available
 show_auto_update_status()
 
 # Hero section - welcoming landing page
-st.title("🏥 JLG Provider Recommender")
+st.title("🏥 Provider Recommender")
 st.markdown("Find the right healthcare provider for your client — quickly and confidently!")
 
 # Load data once - this is cached by @st.cache_data in load_application_data
@@ -91,16 +91,11 @@ except Exception as e:
     with st.expander("🔍 Troubleshooting Information"):
         st.markdown("""
         **Common causes:**
-        - S3 credentials not configured in `.streamlit/secrets.toml`
-        - Network connection issues preventing S3 access
-        - Data format issues in S3 files
         - Missing required Python packages (openpyxl, pandas, etc.)
 
         **Next steps:**
-        1. Check S3 configuration in `.streamlit/secrets.toml`
-        2. Verify network connectivity
-        3. Check Streamlit logs for detailed error messages
-        4. Try refreshing the page or restarting the app
+        1. Check Streamlit logs for detailed error messages
+        2. Try refreshing the page or restarting the app
         """)
 
         # Show the full exception for debugging
@@ -123,23 +118,22 @@ st.divider()
 # Address input section with improved layout
 st.subheader("📍 Client Address")
 
-# Toggle for using firm's address as default
-use_firm_address = st.checkbox(
-    "Use firm's address as default",
-    value=st.session_state.get("use_firm_address", False),
-    help=("Check this box to pre-fill the form with the firm's address "
-          "(14350 Old Marlboro Pike, Upper Marlboro, MD 20772)")
+# Toggle for using test address as default
+use_test_address = st.checkbox(
+    "Use test address as default",
+    value=st.session_state.get("use_test_address", False),
+    help=("Check this box to pre-fill the form with a test address")
 )
 
 # Store the checkbox state in session
-st.session_state["use_firm_address"] = use_firm_address
+st.session_state["use_test_address"] = use_test_address
 
 # Set defaults based on checkbox state
-if use_firm_address:
-    default_street = "14350 Old Marlboro Pike"
-    default_city = "Upper Marlboro"
-    default_state = "MD"
-    default_zipcode = "20772"
+if use_test_address:
+    default_street = ""
+    default_city = ""
+    default_state = None
+    default_zipcode = ""
 else:
     default_street = ""
     default_city = ""
