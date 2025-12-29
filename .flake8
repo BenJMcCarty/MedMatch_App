@@ -10,8 +10,3 @@ exclude =
     assets/logo_config.py,
     tests,
     test_*.py
-
-# Per-file-ignores: allow long base64 asset files and generated modules
-per-file-ignores =
-    assets/logo_data.py:E501
-    assets/logo_config.py:E501
