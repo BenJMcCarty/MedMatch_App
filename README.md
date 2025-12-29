@@ -20,17 +20,11 @@ For a deeper technical breakdown, see:
 
 ## 1. Overview
 
-<!--
-TODO (Copilot):
-Read the existing code (especially `app.py` and the main modules it imports) and write a concise overview here.
-Include:
-- What the app lets a user do (search, filter, view results on a map, inspect details).
-- What kind of data it uses (describe the actual tables/columns if possible).
-- One sentence about why this project exists (e.g. "to showcase interactive data exploration and mapping").
-Replace this placeholder paragraph with your summary.
--->
+**MedMatch** is a Streamlit-based provider recommendation app that helps users find and evaluate medical providers based on geographic proximity, specialty, and referral history. Users can search by address or location, filter by specialty, and view ranked provider recommendations with detailed contact information and referral statistics.
 
-_(Overview goes here – replace this with a project-specific summary.)_
+The app uses a dataset of provider contacts (names, addresses, phone numbers, specialties) enriched with patient volume metrics and user ratings. Data is loaded from local parquet files and cached for fast access. The recommendation algorithm scores providers using a weighted combination of distance from the user's location, patient volume, and user ratings.
+
+This project showcases data-driven decision support, interactive geospatial visualization, and real-time data exploration for healthcare provider networks.
 
 ---
 
@@ -38,34 +32,71 @@ _(Overview goes here – replace this with a project-specific summary.)_
 
 A short version of the architecture is summarized here. Full details live in `docs/ARCHITECTURE.md`.
 
-<!--
-TODO (Copilot):
-Summarize the main components based on `docs/ARCHITECTURE.md` and the codebase.
-Only include modules that actually exist.
--->
+**Core Application:**
+- [app.py](app.py) – Landing page and ETL orchestration. Handles navigation, data loading pipeline from local parquet files to Streamlit cache, and background data refresh on startup.
+- [pages/1_🔎_Search.py](pages/1_🔎_Search.py) – Search interface where users enter address, select specialty, set search radius, and configure scoring weights.
+- [pages/2_📄_Results.py](pages/2_📄_Results.py) – Results display with ranked provider list, detailed provider info cards, and export functionality.
+- [pages/20_📊_Data_Dashboard.py](pages/20_📊_Data_Dashboard.py) – Analytics dashboard showing referral statistics and data quality metrics.
+- [pages/30_🔄_Update_Data.py](pages/30_🔄_Update_Data.py) – Data refresh interface for reloading provider and referral data.
 
-- `app.py` – _TODO: fill in based on real code._
-- `src/...` – _TODO: replace with real modules and short descriptions._
+**Data Layer (`src/data/`):**
+- [ingestion.py](src/data/ingestion.py) – Centralized data loading from local parquet files with Streamlit cache integration and file-based invalidation.
+- [preparation.py](src/data/preparation.py) – Data cleaning and transformation from raw Excel exports to processed parquet files.
+- [io_utils.py](src/data/io_utils.py) – File I/O utilities for loading DataFrames from multiple formats (parquet, CSV, Excel).
 
-You should also mention:
+**Business Logic (`src/`):**
+- [app_logic.py](src/app_logic.py) – Core application logic including `load_application_data()`, radius filtering, and recommendation orchestration.
 
-- Where configuration is defined.
-- Where database access lives.
-- Where map-specific logic lives.
+**Utilities (`src/utils/`):**
+- [scoring.py](src/utils/scoring.py) – Distance calculation (haversine formula) and weighted recommendation scoring algorithm.
+- [geocoding.py](src/utils/geocoding.py) – Address-to-coordinates conversion using Nominatim with rate limiting and caching.
+- [providers.py](src/utils/providers.py) – Provider data validation, referral count aggregation, and time-based filtering.
+- [config.py](src/utils/config.py) – Configuration management for API keys, database URLs, and application settings via Streamlit secrets.
+- [cleaning.py](src/utils/cleaning.py) – Data validation and cleaning functions for coordinates, addresses, and provider records.
+- [addressing.py](src/utils/addressing.py) – Address validation and formatting utilities.
+
+**Key Design Notes:**
+- Configuration is defined in [src/utils/config.py](src/utils/config.py) and reads from Streamlit secrets.
+- Data is stored in local parquet files (`data/processed/Combined_Contacts_and_Reviews.parquet`) – no database required.
+- No map visualization currently – results are displayed in tabular format with distance calculations.
 
 ---
 
 ## 3. Data Flow (High-Level)
 
-How data moves through the app from user input to map output.
+How data moves through the app from user input to ranked provider recommendations.
 
-<!--
-TODO (Copilot):
-Give a high-level summary here and keep the detailed version in `docs/ARCHITECTURE.md`.
-Use real function names and modules where possible.
--->
+1. **App Initialization ([app.py](app.py))**:
+   - On startup, `auto_update_data()` runs in a background thread to load data from `data/processed/Combined_Contacts_and_Reviews.parquet`
+   - `DataIngestionManager` loads parquet files and caches them in Streamlit cache with 1-hour TTL
+   - Daily refresh at 4 AM invalidates cache and reloads data
 
-1. _TODO: Fill this in based on real code._
+2. **Search Input ([pages/1_🔎_Search.py](pages/1_🔎_Search.py))**:
+   - User enters address (street, city, state, zip)
+   - `geocode_address_with_cache()` converts address to latitude/longitude coordinates
+   - User selects specialty, search radius, minimum referrals, and scoring weights
+   - Search parameters stored in `st.session_state`
+
+3. **Data Loading ([src/app_logic.py](src/app_logic.py))**:
+   - `load_application_data()` retrieves cached provider and referral data
+   - Enriches provider data with inbound referral counts and preferred provider status
+   - Validates coordinates and cleans address fields
+   - Optionally applies time-based filtering via `apply_time_filtering()`
+
+4. **Recommendation Scoring ([src/utils/scoring.py](src/utils/scoring.py))**:
+   - `calculate_distances()` computes haversine distance from user location to each provider
+   - `recommend_provider()` scores providers using weighted formula:
+     - Distance (closer is better)
+     - Outbound referral count (more experience is better)
+     - Inbound referral count (optional)
+     - Preferred provider status (optional boost)
+   - Normalizes each factor to 0-1 scale and combines with user-specified weights
+
+5. **Results Display ([pages/2_📄_Results.py](pages/2_📄_Results.py))**:
+   - Displays top-ranked provider in a detailed info card
+   - Shows full ranked list of all matching providers in a sortable table
+   - Provides Word document export for selected provider
+   - Includes scoring explanation and search criteria sidebar
 
 ---
 
