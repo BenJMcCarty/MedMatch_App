@@ -1,3 +1,78 @@
+"""Core application logic for provider recommendation system.
+
+This module orchestrates the main recommendation workflow, connecting data loading,
+filtering, scoring, and result ranking.
+
+DESIGN NOTE: Preferred Provider Integration
+===========================================
+
+The preferred provider feature allows organizations to designate certain providers
+as "preferred" based on established relationships, negotiated rates, or quality metrics.
+This integration affects both data loading and recommendation scoring.
+
+How Preferred Providers Are Integrated:
+---------------------------------------
+1. **Separate Data Source**: Preferred providers are maintained in a separate file
+   (data/processed/preferred_providers.parquet) to allow independent updates without
+   modifying the main provider database.
+
+2. **Outer Merge Strategy**: When loading data, we perform an OUTER join between:
+   - Main provider list (from Combined_Contacts_and_Reviews.parquet)
+   - Preferred provider list (from preferred_providers.parquet)
+   
+   This ensures:
+   - All main providers are included (whether preferred or not)
+   - Preferred-only providers are added even if not in main list
+   - No providers are lost in the merge
+
+3. **Boolean Flag**: The "Preferred Provider" column is a boolean (True/False) that
+   indicates whether a provider is designated as preferred.
+
+4. **Scoring Integration**: The preferred status contributes to the recommendation
+   score via a configurable weight (typically 0.05-0.1 or 5-10% of total score).
+   See src/utils/scoring.py for the scoring algorithm.
+
+Validation and Quality Controls:
+--------------------------------
+- **Percentage Check**: Warns if >80% of providers are marked as preferred, which
+  likely indicates a data quality issue (e.g., wrong file uploaded as preferred list)
+- **One-time Warning**: Uses module-level flag to prevent log spam
+- **Graceful Degradation**: If preferred provider loading fails, all providers are
+  marked as non-preferred and processing continues
+
+Data Flow:
+---------
+1. load_application_data() loads main provider data
+2. _integrate_preferred_providers() loads and merges preferred list
+3. Merge uses "Full Name" as the key (must match exactly)
+4. If preferred list has "Specialty" field, it overrides main specialty
+   (rationale: preferred list may have more accurate specialty data)
+5. Boolean "Preferred Provider" flag added to all rows
+6. Scoring uses this flag via normalized weight in recommend_provider()
+
+Trade-offs and Design Decisions:
+--------------------------------
+- **Separate file vs. column in main data**: Separate file allows independent updates
+  and clear data ownership, but adds complexity to the loading process.
+- **Outer join vs. left join**: Outer join allows adding new preferred providers
+  without waiting for them to appear in main data (e.g., new partnerships).
+- **Boolean vs. tier system**: Boolean is simpler but can't express preference
+  levels (e.g., "gold" vs "silver" tier). Could extend to numeric scale in future.
+- **Name-based matching**: Simple but fragile if names don't match exactly. Consider
+  adding fuzzy matching or ID-based matching for production systems.
+
+Future Enhancements:
+-------------------
+- Support for preference tiers/levels (not just binary preferred/not-preferred)
+- Fuzzy name matching to handle minor spelling variations
+- Preferred provider reason codes (cost, quality, relationship, etc.)
+- Time-based preferences (e.g., preferred only during certain periods)
+
+See also:
+- src/data/ingestion.py: load_preferred_providers() function
+- src/utils/scoring.py: Design note on recommendation scoring algorithm
+"""
+
 import pandas as pd
 import streamlit as st
 
@@ -30,85 +105,97 @@ __all__ = [
 _preferred_pct_warning_logged = False
 
 
-@st.cache_data(ttl=3600)
-def load_application_data():
-    """Load and enrich provider and referral data for the application.
+def _clean_provider_addresses(provider_df: pd.DataFrame) -> pd.DataFrame:
+    """Clean and standardize provider address data.
 
-    This function is the primary data loader for the app, performing:
-    1. Provider data loading and validation
-    2. Coordinate and address cleaning
-    3. Inbound referral count enrichment
-    4. Preferred provider list integration
+    Handles address field cleaning, full address construction, and phone number formatting.
+
+    Args:
+        provider_df: Provider DataFrame with address columns
 
     Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]: (provider_df, detailed_referrals_df)
-            - provider_df: Complete provider data with all enrichments
-            - detailed_referrals_df: Detailed outbound referral records
-
-    Raises:
-        Exception: If data loading fails completely (caught by calling code)
+        pd.DataFrame: Provider DataFrame with cleaned address data
     """
-    import logging
+    # Clean address field values
+    for col in ["Street", "City", "State", "Zip", "Full Address"]:
+        if col in provider_df.columns:
+            provider_df[col] = provider_df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
 
-    logger = logging.getLogger(__name__)
+    # Build full address if missing or incomplete
+    if "Full Address" not in provider_df.columns or provider_df["Full Address"].isna().any():
+        provider_df = build_full_address(provider_df)
 
-    provider_df = load_and_validate_provider_data()
+    # Remove duplicate providers by name
+    if "Full Name" in provider_df.columns:
+        provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
 
-    if provider_df.empty:
-        logger.warning("load_and_validate_provider_data() returned empty DataFrame, trying fallback loader")
-        try:
-            from src.data.ingestion import load_provider_data as _fallback_loader
+    # Standardize phone number formatting
+    phone_candidates = [
+        col for col in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"] if col in provider_df.columns
+    ]
+    if phone_candidates:
+        from src.utils.io_utils import format_phone_number
 
-            provider_df = _fallback_loader()
-            logger.info(f"Fallback loader returned {len(provider_df)} providers")
-        except Exception as e:
-            logger.error(f"Fallback loader failed: {type(e).__name__}: {e}")
-            # Don't silently swallow the exception - let calling code handle it
-            raise
+        phone_source = phone_candidates[0]
+        provider_df["Work Phone Number"] = provider_df[phone_source].apply(format_phone_number)
+        if "Work Phone" not in provider_df.columns:
+            provider_df["Work Phone"] = provider_df["Work Phone Number"]
+        if "Phone Number" not in provider_df.columns:
+            provider_df["Phone Number"] = provider_df["Work Phone Number"]
 
-    if not provider_df.empty:
-        provider_df = validate_and_clean_coordinates(provider_df)
-        provider_df = clean_address_data(provider_df)
-        for col in ["Street", "City", "State", "Zip", "Full Address"]:
-            if col in provider_df.columns:
-                provider_df[col] = provider_df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
-        if "Full Address" not in provider_df.columns or provider_df["Full Address"].isna().any():
-            provider_df = build_full_address(provider_df)
-        if "Full Name" in provider_df.columns:
-            provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
-        phone_candidates = [
-            col for col in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"] if col in provider_df.columns
-        ]
-        if phone_candidates:
-            from src.utils.io_utils import format_phone_number
+    return provider_df
 
-            phone_source = phone_candidates[0]
-            provider_df["Work Phone Number"] = provider_df[phone_source].apply(format_phone_number)
-            if "Work Phone" not in provider_df.columns:
-                provider_df["Work Phone"] = provider_df["Work Phone Number"]
-            if "Phone Number" not in provider_df.columns:
-                provider_df["Phone Number"] = provider_df["Work Phone Number"]
 
-    detailed_referrals_df = load_detailed_referrals()
-    inbound_referrals_df = load_inbound_referrals()
+def _enrich_inbound_referrals(provider_df: pd.DataFrame, inbound_referrals_df: pd.DataFrame) -> pd.DataFrame:
+    """Add inbound referral counts to provider data.
 
-    if not provider_df.empty:
-        if not inbound_referrals_df.empty:
-            inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
-            if (
-                not inbound_counts_df.empty
-                and "Full Name" in provider_df.columns
-                and "Full Name" in inbound_counts_df.columns
-            ):
-                provider_df = provider_df.merge(
-                    inbound_counts_df[["Full Name", "Inbound Referral Count"]],
-                    on="Full Name",
-                    how="left",
-                )
-                provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
-            else:
-                provider_df["Inbound Referral Count"] = 0
-    # --- Preferred providers: include the preferred list and mark providers ---
+    Args:
+        provider_df: Provider DataFrame
+        inbound_referrals_df: Inbound referral records
+
+    Returns:
+        pd.DataFrame: Provider DataFrame with inbound referral counts
+    """
+    if provider_df.empty or inbound_referrals_df.empty:
+        if "Inbound Referral Count" not in provider_df.columns:
+            provider_df["Inbound Referral Count"] = 0
+        return provider_df
+
+    inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
+    if (
+        not inbound_counts_df.empty
+        and "Full Name" in provider_df.columns
+        and "Full Name" in inbound_counts_df.columns
+    ):
+        provider_df = provider_df.merge(
+            inbound_counts_df[["Full Name", "Inbound Referral Count"]],
+            on="Full Name",
+            how="left",
+        )
+        provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+    else:
+        provider_df["Inbound Referral Count"] = 0
+
+    return provider_df
+
+
+def _integrate_preferred_providers(provider_df: pd.DataFrame, logger) -> pd.DataFrame:
+    """Merge preferred provider list and mark preferred providers.
+
+    This function handles:
+    1. Loading preferred provider list
+    2. Merging with main provider data (outer join to include preferred-only providers)
+    3. Marking providers as preferred
+    4. Validating preferred provider percentage
+    5. Handling specialty data from preferred list
+
+    Args:
+        provider_df: Provider DataFrame
+        logger: Logger instance for status messages
+
+    Returns:
+        pd.DataFrame: Provider DataFrame with preferred provider flags
+    """
     try:
         from src.data.ingestion import load_preferred_providers
 
@@ -171,7 +258,19 @@ def load_application_data():
         if "Preferred Provider" not in provider_df.columns:
             provider_df["Preferred Provider"] = False
 
-    # Ensure referral counts are numeric and fill missing with zero (important when preferred list added new rows)
+    return provider_df
+
+
+def _ensure_referral_counts(provider_df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure referral count columns exist and contain valid numeric data.
+
+    Args:
+        provider_df: Provider DataFrame
+
+    Returns:
+        pd.DataFrame: Provider DataFrame with validated referral counts
+    """
+    # Ensure outbound referral counts are numeric and fill missing with zero
     if "Referral Count" in provider_df.columns:
         provider_df["Referral Count"] = pd.to_numeric(provider_df["Referral Count"], errors="coerce").fillna(0)
     else:
@@ -184,6 +283,61 @@ def load_application_data():
         ).fillna(0)
     else:
         provider_df["Inbound Referral Count"] = 0
+
+    return provider_df
+
+
+@st.cache_data(ttl=3600)
+def load_application_data():
+    """Load and enrich provider and referral data for the application.
+
+    This function is the primary data loader for the app, performing:
+    1. Provider data loading and validation
+    2. Coordinate and address cleaning
+    3. Inbound referral count enrichment
+    4. Preferred provider list integration
+
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame]: (provider_df, detailed_referrals_df)
+            - provider_df: Complete provider data with all enrichments
+            - detailed_referrals_df: Detailed outbound referral records
+
+    Raises:
+        Exception: If data loading fails completely (caught by calling code)
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Load and validate base provider data
+    provider_df = load_and_validate_provider_data()
+
+    if provider_df.empty:
+        logger.warning("load_and_validate_provider_data() returned empty DataFrame, trying fallback loader")
+        try:
+            from src.data.ingestion import load_provider_data as _fallback_loader
+
+            provider_df = _fallback_loader()
+            logger.info(f"Fallback loader returned {len(provider_df)} providers")
+        except Exception as e:
+            logger.error(f"Fallback loader failed: {type(e).__name__}: {e}")
+            raise
+
+    # Clean and standardize provider data
+    if not provider_df.empty:
+        provider_df = validate_and_clean_coordinates(provider_df)
+        provider_df = clean_address_data(provider_df)
+        provider_df = _clean_provider_addresses(provider_df)
+
+    # Load referral data
+    detailed_referrals_df = load_detailed_referrals()
+    inbound_referrals_df = load_inbound_referrals()
+
+    # Enrich provider data with referral counts and preferred provider status
+    if not provider_df.empty:
+        provider_df = _enrich_inbound_referrals(provider_df, inbound_referrals_df)
+        provider_df = _integrate_preferred_providers(provider_df, logger)
+        provider_df = _ensure_referral_counts(provider_df)
 
     return provider_df, detailed_referrals_df
 
