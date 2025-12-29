@@ -122,11 +122,18 @@ This makes it easier to:
 - Replace or refine parts later.
 - Add tests around critical logic.
 
-<!--
-TODO (Copilot):
-Identify any very large functions or deeply nested logic.
-If appropriate, suggest or introduce helper functions to break them into smaller units.
--->
+**Refactoring Applied:**
+
+Based on analysis of the codebase, the following refactoring was completed:
+
+- **src/app_logic.py**: Extracted helper functions from `load_application_data()` (originally 155 lines):
+  - `_clean_provider_addresses()` - Address and phone number standardization
+  - `_enrich_inbound_referrals()` - Inbound referral count calculation
+  - `_integrate_preferred_providers()` - Preferred provider list merging and validation
+  - `_ensure_referral_counts()` - Referral count data validation
+  - Main function reduced to ~50 lines with clear orchestration logic
+
+These helper functions improve testability and make the data loading pipeline easier to understand and maintain.
 
 ---
 
@@ -156,8 +163,28 @@ That note should answer:
 - How it’s wired into the existing app.
 - Any important trade-offs or limitations.
 
-<!--
-TODO (Copilot):
-If you find any particularly complex feature in this project, add a short design note
-in the appropriate place (e.g. top of the module or README), following these guidelines.
--->
+**Design Notes Added:**
+
+The following design notes have been added to document complex features:
+
+1. **Recommendation Scoring Algorithm** (src/utils/scoring.py):
+   - Explains the multi-criteria weighted scoring system
+   - Documents normalization strategy and score calculation
+   - Describes trade-offs (min-max sensitivity, haversine vs. driving distance)
+   - Maps how scoring integrates with the rest of the app
+
+2. **Data Caching Strategy** (src/data/ingestion.py):
+   - Details the multi-layer caching approach (Streamlit cache + file modification + daily refresh)
+   - Explains cache invalidation triggers and performance characteristics
+   - Documents trade-offs between freshness and performance
+   - Shows integration with background warming and update workflows
+
+3. **Preferred Provider Integration** (src/app_logic.py):
+   - Describes the outer merge strategy for combining provider lists
+   - Explains validation checks and quality controls
+   - Documents data flow from loading through scoring
+   - Discusses design decisions (separate file, boolean flag, name matching)
+   - Suggests future enhancements (tiers, fuzzy matching, reason codes)
+
+These design notes provide context for reviewers and maintainers, making the codebase
+more understandable without requiring extensive code archaeology.

@@ -1,4 +1,65 @@
-"""Distance calculation and provider recommendation scoring."""
+"""Distance calculation and provider recommendation scoring.
+
+DESIGN NOTE: Recommendation Scoring Algorithm
+==============================================
+
+This module implements a weighted multi-criteria scoring system for ranking healthcare
+providers based on their suitability for patient referrals.
+
+Scoring Factors:
+---------------
+1. **Distance**: Proximity to patient location (haversine formula for geographic distance)
+   - Normalized inverse: closer providers score higher
+   - Range: 0 (farthest) to 1 (closest)
+
+2. **Outbound Referral Count**: Provider experience (number of referrals made)
+   - Normalized direct: more referrals score higher
+   - Range: 0 (minimum) to 1 (maximum)
+   - Rationale: Higher referral counts indicate more experience
+
+3. **Inbound Referral Count** (optional): Reciprocal relationship strength
+   - Normalized direct: more inbound referrals score higher
+   - Range: 0 (minimum) to 1 (maximum)
+   - Rationale: Providers who refer cases back demonstrate partnership value
+
+4. **Preferred Provider Status** (optional): Designated preferred providers
+   - Binary flag (0 or 1) normalized across dataset
+   - Provides a small score boost to preferred providers
+   - Rationale: Organization may have negotiated rates or established relationships
+
+Normalization Strategy:
+----------------------
+Each factor is normalized to [0, 1] scale using min-max normalization within the
+candidate pool. This ensures:
+- All factors contribute proportionally based on their weights
+- Weights can be interpreted as relative importance percentages
+- Score ranges are consistent across different search radii and datasets
+
+Final Score Calculation:
+-----------------------
+Score = (distance_weight × norm_distance) + 
+        (referral_weight × norm_outbound) +
+        (inbound_weight × norm_inbound) +
+        (preferred_weight × norm_preferred)
+
+Where all weights sum to 1.0 (normalized by the calling code).
+
+Trade-offs and Limitations:
+---------------------------
+- Min-max normalization can be sensitive to outliers in small datasets
+- Geographic distance uses haversine formula (great-circle distance), which may not
+  reflect actual driving distance or transit time
+- Referral counts are not time-weighted, so recent activity has same weight as old
+- Binary preferred status may not capture nuances of provider relationships
+- No consideration of provider availability, wait times, or patient reviews
+
+How This Fits Into The App:
+---------------------------
+1. Search page (pages/1_🔎_Search.py): User sets weight preferences via presets or sliders
+2. App logic (src/app_logic.py): run_recommendation() orchestrates filtering and scoring
+3. This module: Performs distance calculation and weighted scoring
+4. Results page (pages/2_📄_Results.py): Displays ranked results with score explanations
+"""
 from typing import List, Optional, Tuple
 
 import numpy as np

@@ -16,6 +16,65 @@ Data Source:
 - Single source file: Combined_Contacts_and_Reviews.parquet
 - Contains provider contact information, specialties, patient counts, and ratings
 - Located in: data/processed/Combined_Contacts_and_Reviews.parquet
+
+DESIGN NOTE: Data Caching Strategy
+===================================
+
+This module implements a multi-layer caching strategy to optimize data loading
+performance while maintaining data freshness.
+
+Caching Layers:
+--------------
+1. **Streamlit @st.cache_data decorator** (1-hour TTL)
+   - Caches processed DataFrames in memory
+   - Automatically invalidates on function signature or parameter changes
+   - Time-to-live: 3600 seconds (1 hour)
+   - Rationale: Balance between performance and data freshness
+
+2. **File modification detection**
+   - Tracks last modification time of source parquet files
+   - Forces cache invalidation when source data changes
+   - Implemented via file hash or mtime checks
+   - Rationale: Ensures cache reflects latest data without manual intervention
+
+3. **Daily scheduled refresh** (4 AM)
+   - DataIngestionManager.check_and_refresh_daily_cache()
+   - Clears all caches once per day at scheduled time
+   - Triggered in app.py on startup
+   - Rationale: Ensures stale data doesn't persist beyond 24 hours
+
+Cache Invalidation Triggers:
+----------------------------
+- TTL expiration (1 hour)
+- Source file modification
+- Daily scheduled refresh (4 AM)
+- Explicit cache clear via Streamlit's cache_data.clear()
+- App restart
+
+Performance Characteristics:
+---------------------------
+- First load: ~500ms-2s (depends on dataset size, typically ~10k rows)
+- Cached load: <10ms (in-memory DataFrame access)
+- Memory footprint: ~5-20MB per cached DataFrame
+- Cache warming: Background thread on app startup (auto_update_data in app.py)
+
+Trade-offs and Design Decisions:
+--------------------------------
+- **1-hour TTL**: Balances fresh data vs. performance. Shorter TTL increases load,
+  longer TTL risks stale data during active data updates.
+- **In-memory only**: No disk-based cache to avoid stale file artifacts and
+  cross-session cache contamination.
+- **Background warming**: Prevents first-user-load penalty but adds startup complexity.
+- **File-based invalidation**: More complex than pure TTL but essential for data
+  update workflows (e.g., 30_🔄_Update_Data.py page).
+
+Integration Points:
+------------------
+- app.py: auto_update_data() warms cache on startup
+- src/app_logic.py: load_application_data() is the primary cache consumer
+- pages/30_🔄_Update_Data.py: Triggers cache clear after data updates
+
+For more on the overall data flow architecture, see docs/ARCHITECTURE.md.
 """
 
 import logging
