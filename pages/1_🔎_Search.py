@@ -72,7 +72,7 @@ US_STATES = [
 
 st.set_page_config(page_title="Provider Recommender", page_icon="🏥", layout="wide")
 
-# Show S3 auto-update status if available
+# Show data loading status if available
 show_auto_update_status()
 
 # Hero section - welcoming landing page
@@ -323,6 +323,24 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         selected_specialties = []
         st.info("ℹ️ No specialty information available in provider data.")
 
+    # Gender filter
+    st.caption("**Provider Gender**")
+    available_genders = []
+    if 'Gender' in provider_df.columns:
+        available_genders = sorted([g for g in provider_df['Gender'].dropna().unique() if str(g).strip()])
+    
+    if available_genders:
+        default_genders = st.session_state.get("selected_genders", available_genders)
+        selected_genders = st.multiselect(
+            "Filter by Gender",
+            options=available_genders,
+            default=default_genders,
+            help="Select one or more genders. Leave all selected to include all providers.",
+        )
+    else:
+        selected_genders = []
+        st.info("ℹ️ No gender information available in provider data.")
+
 st.divider()
 
 # Prominent search button
@@ -385,6 +403,7 @@ if search_clicked:
             "use_time_filter": bool(use_time_filter),
             "max_radius_miles": int(max_radius_miles),
             "selected_specialties": selected_specialties,
+            "selected_genders": selected_genders,
         }
     )
 

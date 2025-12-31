@@ -245,12 +245,16 @@ class DataIngestionManager:
             'pri_spec': 'Specialty',
             'patient_count': 'Referral Count',
             'star_value': 'Rating',
-            'Ind_PAC_ID': 'Person ID',
+            'gndr': 'Gender',
         }
 
         for old_col, new_col in column_mapping.items():
             if old_col in df.columns:
                 df[new_col] = df[old_col]
+
+        # Ensure Work Phone Number exists (used by other parts of the app)
+        if 'Work Phone' in df.columns and 'Work Phone Number' not in df.columns:
+            df['Work Phone Number'] = df['Work Phone']
 
         # Add referral_type for compatibility (all are treated as providers)
         df['referral_type'] = 'provider'
@@ -730,7 +734,7 @@ class DataIngestionManager:
 
         This method checks the current time and compares it to the last refresh time.
         If it's after 4 AM and we haven't refreshed today, it clears the cache
-        to force fresh downloads from S3.
+        to force fresh data loading from local parquet files.
 
         Returns:
             True if cache was refreshed, False otherwise

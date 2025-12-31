@@ -6,7 +6,5 @@ exclude =
     build,
     dist,
     .venv,
-    assets/logo_data.py,
-    assets/logo_config.py,
     tests,
     test_*.py

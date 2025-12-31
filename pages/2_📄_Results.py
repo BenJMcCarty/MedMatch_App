@@ -22,6 +22,9 @@ if "min_referrals" in st.session_state:
 if "selected_specialties" in st.session_state and st.session_state["selected_specialties"]:
     specialties_str = ", ".join(st.session_state["selected_specialties"])
     st.sidebar.write(f"🏥 Specialties: {specialties_str}")
+if "selected_genders" in st.session_state and st.session_state["selected_genders"]:
+    genders_str = ", ".join(st.session_state["selected_genders"])
+    st.sidebar.write(f"👤 Genders: {genders_str}")
 if "street" in st.session_state and "city" in st.session_state:
     st.sidebar.write(f"🏠 From: {st.session_state.get('city', 'N/A')}, {st.session_state.get('state', 'N/A')}")
 
@@ -79,6 +82,7 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
             # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
             preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
             selected_specialties=st.session_state.get("selected_specialties"),
+            selected_genders=st.session_state.get("selected_genders"),
         )
         st.session_state["last_best"] = best
         st.session_state["last_scored_df"] = scored_df
@@ -128,11 +132,17 @@ with st.container():
             if "Specialty" in best and best["Specialty"]:
                 info_items.append(("🩺 Specialty", best["Specialty"]))
 
+            if "Gender" in best and best["Gender"]:
+                info_items.append(("👤 Gender", best["Gender"]))
+
             if "Distance (Miles)" in best:
                 info_items.append(("📍 Distance", f"{best['Distance (Miles)']:.1f} miles"))
 
             if "Referral Count" in best:
                 info_items.append(("📊 Cases Handled", int(best["Referral Count"])))
+
+            if "Rating" in best and pd.notna(best["Rating"]):
+                info_items.append(("⭐ Rating", f"{best['Rating']:.1f}"))
 
             if "Last Verified Date" in best and pd.notna(best["Last Verified Date"]):
                 formatted_date = format_last_verified_display(best["Last Verified Date"])
@@ -177,7 +187,11 @@ st.subheader("📋 All Matching Providers")
 cols = ["Full Name", "Work Phone Number", "Full Address"]
 if "Specialty" in scored_df.columns:
     cols.append("Specialty")
+if "Gender" in scored_df.columns:
+    cols.append("Gender")
 cols.extend(["Distance (Miles)", "Referral Count"])
+if "Rating" in scored_df.columns:
+    cols.append("Rating")
 cols.append("Preferred Provider")
 if "Inbound Referral Count" in scored_df.columns:
     cols.append("Inbound Referral Count")
@@ -217,6 +231,10 @@ if available:
     # Round distance to 1 decimal place for cleaner display
     if "Distance (Miles)" in display_df.columns:
         display_df["Distance (Miles)"] = display_df["Distance (Miles)"].round(1)
+
+    # Round rating to 1 decimal place
+    if "Rating" in display_df.columns:
+        display_df["Rating"] = display_df["Rating"].round(1)
 
     # Round score to 3 decimal places
     if "Score" in display_df.columns:

@@ -96,6 +96,7 @@ __all__ = [
     "filter_providers_by_radius",
     "get_unique_specialties",
     "filter_providers_by_specialty",
+    "filter_providers_by_gender",
     "run_recommendation",
     "validate_provider_data",
 ]
@@ -458,6 +459,28 @@ def filter_providers_by_specialty(df: pd.DataFrame, selected_specialties: list[s
     return df[mask].copy()
 
 
+def filter_providers_by_gender(df: pd.DataFrame, selected_genders: list[str]) -> pd.DataFrame:
+    """Filter providers by selected genders.
+
+    Args:
+        df: Provider DataFrame with optional "Gender" column
+        selected_genders: List of gender strings to filter by
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with providers matching selected genders
+    """
+    if df is None or df.empty:
+        return df
+
+    # If no genders selected or Gender column doesn't exist, return all providers
+    if not selected_genders or "Gender" not in df.columns:
+        return df
+
+    # Filter to providers whose gender is in the selected list
+    mask = df["Gender"].isin(selected_genders)
+    return df[mask].copy()
+
+
 def run_recommendation(
     provider_df: pd.DataFrame,
     user_lat: float,
@@ -470,16 +493,18 @@ def run_recommendation(
     gamma: float,
     preferred_weight: float = 0.1,
     selected_specialties: list[str] = None,
+    selected_genders: list[str] = None,
 ):
     """Run the complete provider recommendation workflow.
 
     This orchestrates the core recommendation algorithm:
     1. Filter by specialty (if specified)
-    2. Filter by minimum referral threshold
-    3. Calculate distances from client location
-    4. Filter by maximum radius
-    5. Score providers using weighted criteria
-    6. Return best match and ranked results
+    2. Filter by gender (if specified)
+    3. Filter by minimum referral threshold
+    4. Calculate distances from client location
+    5. Filter by maximum radius
+    6. Score providers using weighted criteria
+    7. Return best match and ranked results
 
     Args:
         provider_df: Provider data with referral counts
@@ -492,6 +517,7 @@ def run_recommendation(
         gamma: Normalized weight for inbound referrals (0-1)
         preferred_weight: Normalized weight for preferred status (0-1)
         selected_specialties: Optional list of specialties to filter by
+        selected_genders: Optional list of genders to filter by
 
     Returns:
         Tuple[Optional[pd.Series], pd.DataFrame]:
@@ -503,6 +529,12 @@ def run_recommendation(
     # Apply specialty filter first (before other filters)
     if selected_specialties:
         working = filter_providers_by_specialty(working, selected_specialties)
+        if working.empty:
+            return None, pd.DataFrame()
+
+    # Apply gender filter
+    if selected_genders:
+        working = filter_providers_by_gender(working, selected_genders)
         if working.empty:
             return None, pd.DataFrame()
 
