@@ -174,12 +174,15 @@ def filter_providers_by_radius(df: pd.DataFrame, max_radius_miles: float) -> pd.
 
     Args:
         df: Provider DataFrame with "Distance (Miles)" column
-        max_radius_miles: Maximum distance threshold in miles
+        max_radius_miles: Maximum distance threshold in miles (0 = no filter, return all)
 
     Returns:
-        pd.DataFrame: Filtered DataFrame with only providers within radius
+        pd.DataFrame: Filtered DataFrame with only providers within radius, or all providers if max_radius_miles is 0
     """
     if df is None or df.empty or "Distance (Miles)" not in df.columns:
+        return df
+    # Special case: 0 means no radius filter, return all providers
+    if max_radius_miles == 0:
         return df
     return df[df["Distance (Miles)"] <= max_radius_miles].copy()
 

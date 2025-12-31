@@ -70,14 +70,14 @@ US_STATES = [
     "DC",
 ]
 
-st.set_page_config(page_title="Provider Recommender", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="MedMatch - Provider Recommender", page_icon="🏥", layout="wide")
 
-# Show S3 auto-update status if available
-show_auto_update_status()
+# # Show S3 auto-update status if available
+# show_auto_update_status()
 
 # Hero section - welcoming landing page
-st.title("🏥 Provider Recommender")
-st.markdown("Find the right healthcare provider for your client — quickly and confidently!")
+st.title("🏥 MedMatch Provider Recommender")
+st.subheader("Find the right healthcare provider for your client — quickly and confidently!")
 
 # Load data once - this is cached by @st.cache_data in load_application_data
 try:
@@ -114,6 +114,7 @@ st.divider()
 
 # Address input section with improved layout
 st.subheader("📍 Client Address")
+st.markdown("⚠️ Currently only Maryland (MD) providers are supported. More states coming soon! ⚠️")
 
 # Toggle for using test address as default
 use_test_address = st.checkbox(
@@ -127,10 +128,10 @@ st.session_state["use_test_address"] = use_test_address
 
 # Set defaults based on checkbox state
 if use_test_address:
-    default_street = ""
-    default_city = ""
-    default_state = None
-    default_zipcode = ""
+    default_street = "8222 Spadderdock Way"
+    default_city = "Russett"
+    default_state = "MD"
+    default_zipcode = "20724"
 else:
     default_street = ""
     default_city = ""
@@ -237,36 +238,22 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
     st.caption("Set additional criteria to refine your search results.")
 
     # Cache session state lookups and compute defaults once
-    default_time_period = [dt.date.today() - dt.timedelta(days=365), dt.date.today()]
 
-    max_radius_miles = st.slider(
+    max_radius_miles = st.number_input(
         "Maximum Distance (miles)",
-        1,
-        200,
-        st.session_state.get("max_radius_miles", 25),
-        5,
-        help="Only show providers within this distance",
+        min_value=0,
+        max_value=200,
+        value=st.session_state.get("max_radius_miles", 10),
+        step=1,
+        help="Set to 0 to show all providers regardless of distance, or specify a maximum distance in miles.",
     )
 
     min_clients = st.number_input(
         "Minimum Count of Clients",
         0,
-        100,
         value=st.session_state.get("min_clients", 0),
         help="Require providers to have handled at least this many clients.",
     )
-
-    # col_time1, col_time2 = resp_columns([3, 1])
-    # with col_time1:
-    #     time_period = st.date_input(
-    #         "Referral Time Period",
-    #         value=st.session_state.get("time_period", default_time_period),
-    #         help="Consider only referrals within this date range",
-    #     )
-    # with col_time2:
-    #     use_time_filter = st.checkbox(
-    #         "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
-    #     )
 
     # Specialty filter
     st.caption("**Provider Specialties**")
@@ -277,6 +264,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         default_selected = st.session_state.get("selected_specialties", available_specialties)
 
         selected_specialties = st.multiselect(
+
             "Filter by Specialty",
             options=available_specialties,
             default=default_selected,
