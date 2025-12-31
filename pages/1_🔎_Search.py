@@ -3,7 +3,7 @@ import datetime as dt
 import streamlit as st
 
 from app import show_auto_update_status
-from src.app_logic import get_unique_specialties, load_application_data
+from src.app_logic import get_unique_genders, get_unique_specialties, load_application_data
 from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns
 
@@ -110,9 +110,6 @@ if provider_df.empty:
     st.info("💡 Please upload data using the 'Update Data' page or contact support.")
     st.stop()
 
-# Cache the column check to avoid repeated lookups
-has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False
-
 st.divider()
 
 # Address input section with improved layout
@@ -178,33 +175,25 @@ st.subheader("🎯 Search Preferences")
 
 preset_choice = st.radio(
     "Choose a search profile:",
-    ["Prioritize Proximity (Recommended)", "Balanced", "Prioritize Referrals", "Custom Settings"],
+    ["Prioritize Proximity (Recommended)", "Balanced", "Prioritize Experience", "Custom Settings"],
     horizontal=True,
     help="Select a preset to automatically configure search weights, or choose Custom to set your own",
 )
 
 # Set weights based on preset - use conditional assignment to minimize branching
 if preset_choice == "Prioritize Proximity (Recommended)":
-    distance_weight = 0.7
-    outbound_weight = 0.2
-    inbound_weight = 0.05 if has_inbound else 0.0
-    preferred_weight = 0.05
+    distance_weight = 1.0
+    client_weight = 0.0
 elif preset_choice == "Balanced":
-    distance_weight = 0.4
-    outbound_weight = 0.4
-    inbound_weight = 0.1 if has_inbound else 0.0
-    preferred_weight = 0.1
-elif preset_choice == "Prioritize Referrals":
-    distance_weight = 0.2
-    outbound_weight = 0.6
-    inbound_weight = 0.1 if has_inbound else 0.0
-    preferred_weight = 0.1
+    distance_weight = 0.5
+    client_weight = 0.5
+elif preset_choice == "Prioritize Experience":
+    distance_weight = 0.3
+    client_weight = 0.7
 else:  # Custom Settings
     # Cache default values to avoid repeated session state lookups
-    default_distance = 0.4 if has_inbound else 0.6
-    default_outbound = 0.0
-    default_inbound = 0.2
-    default_preferred = 0.1
+    default_distance = 0.5
+    default_client = 0.5
 
     with st.expander("⚖️ Custom Scoring Weights", expanded=True):
         st.caption("Adjust these sliders to control how each factor influences the recommendation.")
@@ -217,57 +206,31 @@ else:  # Custom Settings
             0.05,
             help="Higher values prioritize providers closer to the client",
         )
-        outbound_weight = st.slider(
-            "📊 Outbound Referral Importance",
+        client_weight = st.slider(
+            "📊 Experience Importance",
             0.0,
             1.0,
-            st.session_state.get("outbound_weight", default_outbound),
+            st.session_state.get("client_weight", default_client),
             0.05,
-            help="Higher values favor providers with MORE outbound referrals (more experienced)",
-        )
-        if has_inbound:
-            inbound_weight = st.slider(
-                "🤝 Inbound Referral Importance",
-                0.0,
-                1.0,
-                st.session_state.get("inbound_weight", default_inbound),
-                0.05,
-                help="Higher values favor providers with MORE inbound referrals (refer more cases to us)",
-            )
-        else:
-            inbound_weight = 0.0
-        preferred_weight = st.slider(
-            "⭐ Preferred Provider Importance",
-            0.0,
-            1.0,
-            st.session_state.get("preferred_weight", default_preferred),
-            0.05,
-            help="Higher values favor designated preferred providers",
+            help="Higher values favor providers with MORE clients (more experienced)",
         )
 
 # Calculate normalized weights - only compute once
-total = distance_weight + outbound_weight + inbound_weight + preferred_weight
+total = distance_weight + client_weight
 if total == 0:
     st.error("⚠️ At least one weight must be greater than 0. Please adjust your settings.")
-    alpha = beta = gamma = pref_norm = 0.0
+    alpha = beta = 0.0
 else:
     alpha = distance_weight / total
-    beta = outbound_weight / total
-    gamma = inbound_weight / total if has_inbound else 0.0
-    pref_norm = preferred_weight / total
+    beta = client_weight / total
 
 # Show normalized weights in a more visual way
 if preset_choice == "Custom Settings":
     with st.expander("📊 View Normalized Weights"):
         st.caption("Your settings automatically adjusted to total 100%:")
-        cols = st.columns(4 if has_inbound else 3)
+        cols = st.columns(2)
         cols[0].metric("Distance", f"{alpha*100:.0f}%")
-        cols[1].metric("Outbound", f"{beta*100:.0f}%")
-        if has_inbound:
-            cols[2].metric("Inbound", f"{gamma*100:.0f}%")
-            cols[3].metric("Preferred", f"{pref_norm*100:.0f}%")
-        else:
-            cols[2].metric("Preferred", f"{pref_norm*100:.0f}%")
+        cols[1].metric("Experience", f"{beta*100:.0f}%")
 
 # Advanced filters in collapsible section
 with st.expander("⚙️ Advanced Filters (Optional)"):
@@ -285,25 +248,25 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         help="Only show providers within this distance",
     )
 
-    min_referrals = st.number_input(
-        "Minimum Experience (referral count)",
+    min_clients = st.number_input(
+        "Minimum Count of Clients",
         0,
         100,
-        value=st.session_state.get("min_referrals", 0),
-        help="Require providers to have handled at least this many cases",
+        value=st.session_state.get("min_clients", 0),
+        help="Require providers to have handled at least this many clients.",
     )
 
-    col_time1, col_time2 = resp_columns([3, 1])
-    with col_time1:
-        time_period = st.date_input(
-            "Referral Time Period",
-            value=st.session_state.get("time_period", default_time_period),
-            help="Consider only referrals within this date range",
-        )
-    with col_time2:
-        use_time_filter = st.checkbox(
-            "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
-        )
+    # col_time1, col_time2 = resp_columns([3, 1])
+    # with col_time1:
+    #     time_period = st.date_input(
+    #         "Referral Time Period",
+    #         value=st.session_state.get("time_period", default_time_period),
+    #         help="Consider only referrals within this date range",
+    #     )
+    # with col_time2:
+    #     use_time_filter = st.checkbox(
+    #         "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
+    #     )
 
     # Specialty filter
     st.caption("**Provider Specialties**")
@@ -322,6 +285,24 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
     else:
         selected_specialties = []
         st.info("ℹ️ No specialty information available in provider data.")
+
+    # Gender filter
+    st.caption("**Provider Gender**")
+    available_genders = get_unique_genders(provider_df)
+
+    if available_genders:
+        # Get previously selected genders from session state, default to all
+        default_selected_genders = st.session_state.get("selected_genders", available_genders)
+
+        selected_genders = st.multiselect(
+            "Filter by Gender",
+            options=available_genders,
+            default=default_selected_genders,
+            help="Select one or more provider genders. Leave all selected to include all providers.",
+        )
+    else:
+        selected_genders = []
+        st.info("ℹ️ No gender information available in provider data.")
 
 st.divider()
 
@@ -374,17 +355,12 @@ if search_clicked:
             "user_lon": float(user_lon),
             "alpha": float(alpha),
             "beta": float(beta),
-            "gamma": float(gamma),
-            "preferred_weight": float(preferred_weight),
-            "preferred_norm": float(pref_norm),
             "distance_weight": float(distance_weight),
-            "outbound_weight": float(outbound_weight),
-            "inbound_weight": float(inbound_weight),
-            "min_referrals": int(min_referrals),
-            "time_period": time_period,
-            "use_time_filter": bool(use_time_filter),
+            "client_weight": float(client_weight),
+            "min_clients": int(min_clients),
             "max_radius_miles": int(max_radius_miles),
             "selected_specialties": selected_specialties,
+            "selected_genders": selected_genders,
         }
     )
 

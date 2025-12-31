@@ -102,8 +102,8 @@ def calculate_time_based_referral_counts(
     time_based_counts = (
         filtered_df.groupby(available_cols, as_index=False)
         .size()
-        .rename(columns={"size": "Referral Count"})
-        .sort_values(by="Referral Count", ascending=False)
+        .rename(columns={"size": "Client Count"})
+        .sort_values(by="Client Count", ascending=False)
     )
 
     return time_based_counts

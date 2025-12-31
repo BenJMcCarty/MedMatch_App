@@ -86,8 +86,8 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
 
-    if "Referral Count" in df.columns:
-        df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
+    if "Client Count" in df.columns:
+        df["Client Count"] = pd.to_numeric(df["Client Count"], errors="coerce")
 
     if "Full Address" not in df.columns:
         # build naïve address

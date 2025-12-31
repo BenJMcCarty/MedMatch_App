@@ -2,81 +2,12 @@
 
 This module orchestrates the main recommendation workflow, connecting data loading,
 filtering, scoring, and result ranking.
-
-DESIGN NOTE: Preferred Provider Integration
-===========================================
-
-The preferred provider feature allows organizations to designate certain providers
-as "preferred" based on established relationships, negotiated rates, or quality metrics.
-This integration affects both data loading and recommendation scoring.
-
-How Preferred Providers Are Integrated:
----------------------------------------
-1. **Separate Data Source**: Preferred providers are maintained in a separate file
-   (data/processed/preferred_providers.parquet) to allow independent updates without
-   modifying the main provider database.
-
-2. **Outer Merge Strategy**: When loading data, we perform an OUTER join between:
-   - Main provider list (from Combined_Contacts_and_Reviews.parquet)
-   - Preferred provider list (from preferred_providers.parquet)
-   
-   This ensures:
-   - All main providers are included (whether preferred or not)
-   - Preferred-only providers are added even if not in main list
-   - No providers are lost in the merge
-
-3. **Boolean Flag**: The "Preferred Provider" column is a boolean (True/False) that
-   indicates whether a provider is designated as preferred.
-
-4. **Scoring Integration**: The preferred status contributes to the recommendation
-   score via a configurable weight (typically 0.05-0.1 or 5-10% of total score).
-   See src/utils/scoring.py for the scoring algorithm.
-
-Validation and Quality Controls:
---------------------------------
-- **Percentage Check**: Warns if >80% of providers are marked as preferred, which
-  likely indicates a data quality issue (e.g., wrong file uploaded as preferred list)
-- **One-time Warning**: Uses module-level flag to prevent log spam
-- **Graceful Degradation**: If preferred provider loading fails, all providers are
-  marked as non-preferred and processing continues
-
-Data Flow:
----------
-1. load_application_data() loads main provider data
-2. _integrate_preferred_providers() loads and merges preferred list
-3. Merge uses "Full Name" as the key (must match exactly)
-4. If preferred list has "Specialty" field, it overrides main specialty
-   (rationale: preferred list may have more accurate specialty data)
-5. Boolean "Preferred Provider" flag added to all rows
-6. Scoring uses this flag via normalized weight in recommend_provider()
-
-Trade-offs and Design Decisions:
---------------------------------
-- **Separate file vs. column in main data**: Separate file allows independent updates
-  and clear data ownership, but adds complexity to the loading process.
-- **Outer join vs. left join**: Outer join allows adding new preferred providers
-  without waiting for them to appear in main data (e.g., new partnerships).
-- **Boolean vs. tier system**: Boolean is simpler but can't express preference
-  levels (e.g., "gold" vs "silver" tier). Could extend to numeric scale in future.
-- **Name-based matching**: Simple but fragile if names don't match exactly. Consider
-  adding fuzzy matching or ID-based matching for production systems.
-
-Future Enhancements:
--------------------
-- Support for preference tiers/levels (not just binary preferred/not-preferred)
-- Fuzzy name matching to handle minor spelling variations
-- Preferred provider reason codes (cost, quality, relationship, etc.)
-- Time-based preferences (e.g., preferred only during certain periods)
-
-See also:
-- src/data/ingestion.py: load_preferred_providers() function
-- src/utils/scoring.py: Design note on recommendation scoring algorithm
 """
 
 import pandas as pd
 import streamlit as st
 
-from src.data.ingestion import load_detailed_referrals, load_inbound_referrals
+from src.data.ingestion import load_detailed_referrals
 from src.utils.cleaning import (
     build_full_address,
     clean_address_data,
@@ -84,7 +15,6 @@ from src.utils.cleaning import (
     validate_provider_data,
 )
 from src.utils.providers import (
-    calculate_inbound_referral_counts,
     calculate_time_based_referral_counts,
     load_and_validate_provider_data,
 )
@@ -95,14 +25,12 @@ __all__ = [
     "apply_time_filtering",
     "filter_providers_by_radius",
     "get_unique_specialties",
+    "get_unique_genders",
     "filter_providers_by_specialty",
+    "filter_providers_by_gender",
     "run_recommendation",
     "validate_provider_data",
 ]
-
-
-# Flag to ensure preferred percentage warning is logged only once per app session
-_preferred_pct_warning_logged = False
 
 
 def _clean_provider_addresses(provider_df: pd.DataFrame) -> pd.DataFrame:
@@ -146,143 +74,20 @@ def _clean_provider_addresses(provider_df: pd.DataFrame) -> pd.DataFrame:
     return provider_df
 
 
-def _enrich_inbound_referrals(provider_df: pd.DataFrame, inbound_referrals_df: pd.DataFrame) -> pd.DataFrame:
-    """Add inbound referral counts to provider data.
-
-    Args:
-        provider_df: Provider DataFrame
-        inbound_referrals_df: Inbound referral records
-
-    Returns:
-        pd.DataFrame: Provider DataFrame with inbound referral counts
-    """
-    if provider_df.empty or inbound_referrals_df.empty:
-        if "Inbound Referral Count" not in provider_df.columns:
-            provider_df["Inbound Referral Count"] = 0
-        return provider_df
-
-    inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
-    if (
-        not inbound_counts_df.empty
-        and "Full Name" in provider_df.columns
-        and "Full Name" in inbound_counts_df.columns
-    ):
-        provider_df = provider_df.merge(
-            inbound_counts_df[["Full Name", "Inbound Referral Count"]],
-            on="Full Name",
-            how="left",
-        )
-        provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
-    else:
-        provider_df["Inbound Referral Count"] = 0
-
-    return provider_df
-
-
-def _integrate_preferred_providers(provider_df: pd.DataFrame, logger) -> pd.DataFrame:
-    """Merge preferred provider list and mark preferred providers.
-
-    This function handles:
-    1. Loading preferred provider list
-    2. Merging with main provider data (outer join to include preferred-only providers)
-    3. Marking providers as preferred
-    4. Validating preferred provider percentage
-    5. Handling specialty data from preferred list
-
-    Args:
-        provider_df: Provider DataFrame
-        logger: Logger instance for status messages
-
-    Returns:
-        pd.DataFrame: Provider DataFrame with preferred provider flags
-    """
-    try:
-        from src.data.ingestion import load_preferred_providers
-
-        preferred_df = load_preferred_providers()
-        if preferred_df is not None and not preferred_df.empty and "Full Name" in preferred_df.columns:
-            # Select columns to merge from preferred providers (include Specialty if available)
-            pref_cols = ["Full Name"]
-            if "Specialty" in preferred_df.columns:
-                pref_cols.append("Specialty")
-            pref_data = preferred_df[pref_cols].drop_duplicates(subset=["Full Name"], keep="first")
-
-            # Log preferred providers information for verification
-            logger.info(f"Loaded {len(pref_data)} unique preferred providers from preferred providers file")
-            logger.debug(f"Preferred providers: {pref_data['Full Name'].tolist()[:10]}...")  # Show first 10
-
-            # Merge outer so preferred-only providers are included
-            provider_df = provider_df.merge(
-                pref_data, on="Full Name", how="outer", indicator=True, suffixes=("", "_pref")
-            )
-            # Mark preferred where the merge shows presence in preferred list (boolean)
-            provider_df["Preferred Provider"] = provider_df["_merge"].apply(
-                lambda v: True if v in ("both", "right_only") else False
-            )
-
-            # Count and log preferred provider attribution
-            preferred_count = provider_df["Preferred Provider"].sum()
-            total_count = len(provider_df)
-            preferred_pct = (preferred_count / total_count * 100) if total_count > 0 else 0
-
-            logger.info(f"Marked {preferred_count} out of {total_count} providers as preferred ({preferred_pct:.1f}%)")
-
-            # Validation: Warn if suspiciously high percentage of providers are marked as preferred
-            if preferred_pct > 80:
-                global _preferred_pct_warning_logged
-
-                if not _preferred_pct_warning_logged:
-                    logger.warning(
-                        f"WARNING: {preferred_pct:.1f}% of providers are marked as preferred. "
-                        "This is unusually high and may indicate that the preferred providers file "
-                        "contains all providers instead of just the preferred ones. "
-                        "Please verify the preferred providers data source."
-                    )
-                    _preferred_pct_warning_logged = True  # Set flag to prevent future duplicate warnings
-
-            provider_df = provider_df.drop(columns=["_merge"])
-
-            # If Specialty column exists from preferred providers, use it
-            # (prioritize preferred provider specialty)
-            if "Specialty_pref" in provider_df.columns:
-                provider_df["Specialty"] = provider_df["Specialty_pref"]
-                provider_df = provider_df.drop(columns=["Specialty_pref"])
-        else:
-            # No preferred list available or no Full Name column
-            # Ensure the column exists as boolean; default to False when missing
-            if "Preferred Provider" not in provider_df.columns:
-                provider_df["Preferred Provider"] = False
-            logger.info("No preferred providers list available - all providers marked as not preferred")
-    except Exception as e:
-        logger.error(f"Error processing preferred providers: {e}")
-        if "Preferred Provider" not in provider_df.columns:
-            provider_df["Preferred Provider"] = False
-
-    return provider_df
-
-
-def _ensure_referral_counts(provider_df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure referral count columns exist and contain valid numeric data.
+def _ensure_client_counts(provider_df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure client count columns exist and contain valid numeric data.
 
     Args:
         provider_df: Provider DataFrame
 
     Returns:
-        pd.DataFrame: Provider DataFrame with validated referral counts
+        pd.DataFrame: Provider DataFrame with validated client counts
     """
-    # Ensure outbound referral counts are numeric and fill missing with zero
-    if "Referral Count" in provider_df.columns:
-        provider_df["Referral Count"] = pd.to_numeric(provider_df["Referral Count"], errors="coerce").fillna(0)
+    # Ensure client counts are numeric and fill missing with zero
+    if "Client Count" in provider_df.columns:
+        provider_df["Client Count"] = pd.to_numeric(provider_df["Client Count"], errors="coerce").fillna(0)
     else:
-        provider_df["Referral Count"] = 0
-
-    # Ensure inbound referral count exists
-    if "Inbound Referral Count" in provider_df.columns:
-        provider_df["Inbound Referral Count"] = pd.to_numeric(
-            provider_df["Inbound Referral Count"], errors="coerce"
-        ).fillna(0)
-    else:
-        provider_df["Inbound Referral Count"] = 0
+        provider_df["Client Count"] = 0
 
     return provider_df
 
@@ -294,8 +99,7 @@ def load_application_data():
     This function is the primary data loader for the app, performing:
     1. Provider data loading and validation
     2. Coordinate and address cleaning
-    3. Inbound referral count enrichment
-    4. Preferred provider list integration
+    3. Client count validation
 
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: (provider_df, detailed_referrals_df)
@@ -331,49 +135,37 @@ def load_application_data():
 
     # Load referral data
     detailed_referrals_df = load_detailed_referrals()
-    inbound_referrals_df = load_inbound_referrals()
 
-    # Enrich provider data with referral counts and preferred provider status
+    # Enrich provider data with client counts
     if not provider_df.empty:
-        provider_df = _enrich_inbound_referrals(provider_df, inbound_referrals_df)
-        provider_df = _integrate_preferred_providers(provider_df, logger)
-        provider_df = _ensure_referral_counts(provider_df)
+        provider_df = _ensure_client_counts(provider_df)
 
     return provider_df, detailed_referrals_df
 
 
 def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date):
-    """Apply time-based filtering for outbound and inbound referrals.
+    """Apply time-based filtering for outbound referrals.
 
-    Recalculates referral counts based on a specific date range, replacing
+    Recalculates client counts based on a specific date range, replacing
     the full-time counts with time-filtered values.
 
     Args:
-        provider_df: Provider DataFrame with existing referral counts
+        provider_df: Provider DataFrame with existing client counts
         detailed_referrals_df: Detailed outbound referral records
         start_date: Start date for filtering (inclusive)
         end_date: End date for filtering (inclusive)
 
     Returns:
-        pd.DataFrame: Provider DataFrame with time-filtered referral counts
+        pd.DataFrame: Provider DataFrame with time-filtered client counts
     """
     working_df = provider_df.copy()
     if not detailed_referrals_df.empty:
         time_filtered_outbound = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
         if not time_filtered_outbound.empty:
-            working_df = working_df.drop(columns=["Referral Count"], errors="ignore").merge(
-                time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
+            working_df = working_df.drop(columns=["Client Count"], errors="ignore").merge(
+                time_filtered_outbound[["Full Name", "Client Count"]], on="Full Name", how="left"
             )
-            working_df["Referral Count"] = working_df["Referral Count"].fillna(0)
-
-    inbound_referrals_df = load_inbound_referrals()
-    if not inbound_referrals_df.empty:
-        time_filtered_inbound = calculate_inbound_referral_counts(inbound_referrals_df, start_date, end_date)
-        if not time_filtered_inbound.empty:
-            working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore").merge(
-                time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
-            )
-            working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)
+            working_df["Client Count"] = working_df["Client Count"].fillna(0)
     return working_df
 
 
@@ -423,6 +215,35 @@ def get_unique_specialties(provider_df: pd.DataFrame) -> list[str]:
     return sorted(list(unique_specialties))
 
 
+def get_unique_genders(provider_df: pd.DataFrame) -> list[str]:
+    """Extract unique gender values from provider DataFrame.
+
+    Args:
+        provider_df: Provider DataFrame with optional "Gender" column
+
+    Returns:
+        Sorted list of unique gender strings
+    """
+    if provider_df.empty or "Gender" not in provider_df.columns:
+        return []
+
+    # Get all non-null gender values
+    genders_series = provider_df["Gender"].dropna()
+
+    if genders_series.empty:
+        return []
+
+    # Collect unique gender values (standardize to title case)
+    unique_genders = set()
+    for gender_str in genders_series:
+        if pd.notna(gender_str) and str(gender_str).strip():
+            gender_clean = str(gender_str).strip().title()
+            if gender_clean:
+                unique_genders.add(gender_clean)
+
+    return sorted(list(unique_genders))
+
+
 def filter_providers_by_specialty(df: pd.DataFrame, selected_specialties: list[str]) -> pd.DataFrame:
     """Filter providers by selected specialties.
 
@@ -458,40 +279,69 @@ def filter_providers_by_specialty(df: pd.DataFrame, selected_specialties: list[s
     return df[mask].copy()
 
 
+def filter_providers_by_gender(df: pd.DataFrame, selected_genders: list[str]) -> pd.DataFrame:
+    """Filter providers by selected genders.
+
+    Args:
+        df: Provider DataFrame with optional "Gender" column
+        selected_genders: List of gender strings to filter by
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with providers matching selected genders
+    """
+    if df is None or df.empty:
+        return df
+
+    # If no genders selected or Gender column doesn't exist, return all providers
+    if not selected_genders or "Gender" not in df.columns:
+        return df
+
+    # Create a boolean mask for providers that match any selected gender
+    def matches_gender(gender_value):
+        if pd.isna(gender_value):
+            return False
+
+        # Standardize to title case for comparison
+        provider_gender = str(gender_value).strip().title()
+        return provider_gender in selected_genders
+
+    mask = df["Gender"].apply(matches_gender)
+    return df[mask].copy()
+
+
 def run_recommendation(
     provider_df: pd.DataFrame,
     user_lat: float,
     user_lon: float,
     *,
-    min_referrals: int,
+    min_clients: int,
     max_radius_miles: int,
     alpha: float,
     beta: float,
-    gamma: float,
-    preferred_weight: float = 0.1,
     selected_specialties: list[str] = None,
+    selected_genders: list[str] = None,
 ):
     """Run the complete provider recommendation workflow.
 
     This orchestrates the core recommendation algorithm:
     1. Filter by specialty (if specified)
-    2. Filter by minimum referral threshold
-    3. Calculate distances from client location
-    4. Filter by maximum radius
-    5. Score providers using weighted criteria
-    6. Return best match and ranked results
+    2. Filter by gender (if specified)
+    3. Filter by minimum client threshold
+    4. Calculate distances from client location
+    5. Filter by maximum radius
+    6. Score providers using weighted criteria
+    7. Return best match and ranked results
 
     Args:
-        provider_df: Provider data with referral counts
+        provider_df: Provider data with client counts
         user_lat: Client latitude
         user_lon: Client longitude
-        min_referrals: Minimum referral count threshold
+        min_clients: Minimum client count threshold
         max_radius_miles: Maximum distance in miles
         alpha: Normalized weight for distance (0-1)
-        beta: Normalized weight for outbound referrals (0-1)
-        gamma: Normalized weight for inbound referrals (0-1)
-        preferred_weight: Normalized weight for preferred status (0-1)
+        beta: Normalized weight for client count (0-1)
         selected_specialties: Optional list of specialties to filter by
+        selected_genders: Optional list of genders to filter by
 
     Returns:
         Tuple[Optional[pd.Series], pd.DataFrame]:
@@ -506,8 +356,14 @@ def run_recommendation(
         if working.empty:
             return None, pd.DataFrame()
 
-    # Apply referral count filter
-    working = working[working["Referral Count"] >= min_referrals].copy()
+    # Apply gender filter
+    if selected_genders:
+        working = filter_providers_by_gender(working, selected_genders)
+        if working.empty:
+            return None, pd.DataFrame()
+
+    # Apply client count filter
+    working = working[working["Client Count"] >= min_clients].copy()
     if working.empty:
         return None, pd.DataFrame()
 
@@ -521,10 +377,8 @@ def run_recommendation(
     best, scored_df = recommend_provider(
         working,
         distance_weight=alpha,
-        referral_weight=beta,
-        inbound_weight=gamma,
-        preferred_weight=preferred_weight,
-        min_referrals=min_referrals,
+        client_weight=beta,
+        min_clients=min_clients,
     )
     if scored_df is not None and not scored_df.empty and "Full Name" in scored_df.columns:
         scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")

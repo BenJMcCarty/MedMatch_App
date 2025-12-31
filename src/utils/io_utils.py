@@ -52,14 +52,6 @@ def get_word_bytes(best_provider: pd.Series) -> bytes:
     doc = Document()
     doc.add_heading("Recommended Provider", 0)
     doc.add_paragraph(f"Name: {best_provider.get('Full Name', '')}")
-    # Preferred Provider status if available (display as Yes/No for booleans)
-    pref = best_provider.get("Preferred Provider")
-    if pref is not None:
-        if isinstance(pref, bool):
-            pref_display = "Yes" if pref else "No"
-        else:
-            pref_display = str(pref)
-        doc.add_paragraph(f"Preferred Provider: {pref_display}")
     doc.add_paragraph(f"Address: {best_provider.get('Full Address', '')}")
     phone = None
     for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:

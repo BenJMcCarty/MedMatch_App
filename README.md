@@ -20,9 +20,9 @@ For a deeper technical breakdown, see:
 
 ## 1. Overview
 
-**MedMatch** is a Streamlit-based provider recommendation app that helps users find and evaluate medical providers based on geographic proximity, specialty, and referral history. Users can search by address or location, filter by specialty, and view ranked provider recommendations with detailed contact information and referral statistics.
+**MedMatch** is a Streamlit-based provider recommendation app that helps users find and evaluate medical providers based on geographic proximity, specialty, gender preferences, and experience level. Users can search by address or location, filter by specialty and gender, and view ranked provider recommendations with detailed contact information and client statistics.
 
-The app uses a dataset of provider contacts (names, addresses, phone numbers, specialties) enriched with patient volume metrics and user ratings. Data is loaded from local parquet files and cached for fast access. The recommendation algorithm scores providers using a weighted combination of distance from the user's location, patient volume, and user ratings.
+The app uses a dataset of provider contacts (names, addresses, phone numbers, specialties, gender) enriched with patient volume metrics and user ratings. Data is loaded from local parquet files and cached for fast access. The recommendation algorithm scores providers using a weighted combination of distance from the user's location and client count (experience level).
 
 This project showcases data-driven decision support, interactive geospatial visualization, and real-time data exploration for healthcare provider networks.
 
@@ -45,20 +45,23 @@ A short version of the architecture is summarized here. Full details live in `do
 - [io_utils.py](src/data/io_utils.py) – File I/O utilities for loading DataFrames from multiple formats (parquet, CSV, Excel).
 
 **Business Logic (`src/`):**
-- [app_logic.py](src/app_logic.py) – Core application logic including `load_application_data()`, radius filtering, and recommendation orchestration.
+- [app_logic.py](src/app_logic.py) – Core application logic including `load_application_data()`, specialty/gender filtering, radius filtering, and recommendation orchestration.
 
 **Utilities (`src/utils/`):**
-- [scoring.py](src/utils/scoring.py) – Distance calculation (haversine formula) and weighted recommendation scoring algorithm.
+- [scoring.py](src/utils/scoring.py) – Distance calculation (haversine formula) and weighted recommendation scoring algorithm using distance and client count.
 - [geocoding.py](src/utils/geocoding.py) – Address-to-coordinates conversion using Nominatim with rate limiting and caching.
-- [providers.py](src/utils/providers.py) – Provider data validation, referral count aggregation, and time-based filtering.
+- [providers.py](src/utils/providers.py) – Provider data validation, client count aggregation, and time-based filtering.
 - [config.py](src/utils/config.py) – Configuration management for API keys, database URLs, and application settings via Streamlit secrets.
 - [cleaning.py](src/utils/cleaning.py) – Data validation and cleaning functions for coordinates, addresses, and provider records.
 - [addressing.py](src/utils/addressing.py) – Address validation and formatting utilities.
+- [responsive.py](src/utils/responsive.py) – Responsive layout utilities for adapting the UI to different screen sizes.
+- [freshness.py](src/utils/freshness.py) – Data freshness tracking and display utilities for showing when provider information was last verified.
+- [io_utils.py](src/utils/io_utils.py) – Additional I/O utilities including phone number formatting and filename sanitization.
 
 **Key Design Notes:**
 - Configuration is defined in [src/utils/config.py](src/utils/config.py) and reads from Streamlit secrets.
 - Data is stored in local parquet files (`data/processed/Combined_Contacts_and_Reviews.parquet`) – no database required.
-- No map visualization currently – results are displayed in tabular format with distance calculations.
+- Map visualization using pydeck displays provider locations and user location with color-coded rankings.
 
 ---
 
@@ -74,29 +77,28 @@ How data moves through the app from user input to ranked provider recommendation
 2. **Search Input ([pages/1_🔎_Search.py](pages/1_🔎_Search.py))**:
    - User enters address (street, city, state, zip)
    - `geocode_address_with_cache()` converts address to latitude/longitude coordinates
-   - User selects specialty, search radius, minimum referrals, and scoring weights
+   - User selects specialty filters, gender filters, search radius, minimum client count, and scoring weights (distance vs. experience)
    - Search parameters stored in `st.session_state`
 
 3. **Data Loading ([src/app_logic.py](src/app_logic.py))**:
    - `load_application_data()` retrieves cached provider and referral data
-   - Enriches provider data with inbound referral counts and preferred provider status
    - Validates coordinates and cleans address fields
-   - Optionally applies time-based filtering via `apply_time_filtering()`
+   - Returns provider data with client counts and contact information
 
 4. **Recommendation Scoring ([src/utils/scoring.py](src/utils/scoring.py))**:
    - `calculate_distances()` computes haversine distance from user location to each provider
    - `recommend_provider()` scores providers using weighted formula:
      - Distance (closer is better)
-     - Outbound referral count (more experience is better)
-     - Inbound referral count (optional)
-     - Preferred provider status (optional boost)
-   - Normalizes each factor to 0-1 scale and combines with user-specified weights
+     - Client Count (more clients indicates more experience)
+   - Normalizes each factor to 0-1 scale using min-max normalization
+   - Combines normalized values with user-specified weights (distance_weight and client_weight)
 
 5. **Results Display ([pages/2_📄_Results.py](pages/2_📄_Results.py))**:
    - Displays top-ranked provider in a detailed info card
    - Shows full ranked list of all matching providers in a sortable table
-   - Provides Word document export for selected provider
-   - Includes scoring explanation and search criteria sidebar
+   - Provides Word document export for best match provider
+   - Includes interactive map visualization (if pydeck available)
+   - Includes scoring explanation and search criteria sidebar showing active filters
 
 ---
 
@@ -228,9 +230,14 @@ debug_mode = app_config['debug_mode']
 - Daily refresh: 4:00 AM
 
 **Search Defaults:**
-- Radius: 50 miles (range: 5-100)
-- Minimum referrals: 0
-- Default weights: Balanced (Distance: 0.4, Outbound: 0.4, Inbound: 0.1, Preferred: 0.1)
+- Radius: 25 miles (range: 1-200)
+- Minimum clients: 0 (range: 0-100)
+- Default weights: Balanced (Distance: 0.5, Experience: 0.5)
+- Preset profiles:
+  - **Prioritize Proximity (Recommended)**: Distance: 1.0, Experience: 0.0
+  - **Balanced**: Distance: 0.5, Experience: 0.5
+  - **Prioritize Experience**: Distance: 0.3, Experience: 0.7
+  - **Custom Settings**: User-defined sliders
 
 ### Deployment to Streamlit Cloud
 

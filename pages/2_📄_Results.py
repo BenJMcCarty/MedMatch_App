@@ -1,6 +1,12 @@
 import pandas as pd
 import streamlit as st
 
+try:
+    import pydeck as pdk
+    PYDECK_AVAILABLE = True
+except ImportError:
+    PYDECK_AVAILABLE = False
+
 from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
 from src.utils.io_utils import format_phone_number, get_word_bytes, sanitize_filename
 from src.utils.responsive import resp_columns
@@ -17,15 +23,18 @@ st.sidebar.divider()
 st.sidebar.caption("**Your Search Criteria:**")
 if "max_radius_miles" in st.session_state:
     st.sidebar.write(f"📍 Radius: {st.session_state['max_radius_miles']} miles")
-if "min_referrals" in st.session_state:
-    st.sidebar.write(f"📊 Min. #sCases: {st.session_state['min_referrals']} cases")
+if "min_clients" in st.session_state:
+    st.sidebar.write(f"📊 Min. Clients: {st.session_state['min_clients']} cases")
 if "selected_specialties" in st.session_state and st.session_state["selected_specialties"]:
     specialties_str = ", ".join(st.session_state["selected_specialties"])
     st.sidebar.write(f"🏥 Specialties: {specialties_str}")
+if "selected_genders" in st.session_state and st.session_state["selected_genders"]:
+    genders_str = ", ".join(st.session_state["selected_genders"])
+    st.sidebar.write(f"👤 Genders: {genders_str}")
 if "street" in st.session_state and "city" in st.session_state:
     st.sidebar.write(f"🏠 From: {st.session_state.get('city', 'N/A')}, {st.session_state.get('state', 'N/A')}")
 
-required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_referrals", "max_radius_miles"]
+required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_clients", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
     st.switch_page("pages/1_🔎_Search.py")
@@ -71,14 +80,12 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
             provider_df,
             st.session_state["user_lat"],
             st.session_state["user_lon"],
-            min_referrals=st.session_state["min_referrals"],
+            min_clients=st.session_state["min_clients"],
             max_radius_miles=st.session_state["max_radius_miles"],
             alpha=st.session_state["alpha"],
             beta=st.session_state["beta"],
-            gamma=st.session_state.get("gamma", 0.0),
-            # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
-            preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
             selected_specialties=st.session_state.get("selected_specialties"),
+            selected_genders=st.session_state.get("selected_genders"),
         )
         st.session_state["last_best"] = best
         st.session_state["last_scored_df"] = scored_df
@@ -131,8 +138,8 @@ with st.container():
             if "Distance (Miles)" in best:
                 info_items.append(("📍 Distance", f"{best['Distance (Miles)']:.1f} miles"))
 
-            if "Referral Count" in best:
-                info_items.append(("📊 Cases Handled", int(best["Referral Count"])))
+            if "Client Count" in best:
+                info_items.append(("📊 Cases Handled", int(best["Client Count"])))
 
             if "Last Verified Date" in best and pd.notna(best["Last Verified Date"]):
                 formatted_date = format_last_verified_display(best["Last Verified Date"])
@@ -147,11 +154,6 @@ with st.container():
         if isinstance(best, pd.Series):
             if "Score" in best:
                 st.metric("Match Score", f"{best['Score']:.3f}", help="Higher scores indicate better matches")
-
-            if "Preferred Provider" in best:
-                is_preferred = best["Preferred Provider"]
-                if is_preferred:
-                    st.success("⭐ Preferred Provider")
 
 st.divider()
 
@@ -177,10 +179,7 @@ st.subheader("📋 All Matching Providers")
 cols = ["Full Name", "Work Phone Number", "Full Address"]
 if "Specialty" in scored_df.columns:
     cols.append("Specialty")
-cols.extend(["Distance (Miles)", "Referral Count"])
-cols.append("Preferred Provider")
-if "Inbound Referral Count" in scored_df.columns:
-    cols.append("Inbound Referral Count")
+cols.extend(["Distance (Miles)", "Client Count"])
 if "Last Verified Date" in scored_df.columns:
     cols.append("Last Verified Date")
 if "Score" in scored_df.columns:
@@ -210,10 +209,6 @@ if available:
             lambda x: format_last_verified_display(x, include_age=False)
         )
 
-    # Format boolean Preferred Provider column for better display
-    if "Preferred Provider" in display_df.columns:
-        display_df["Preferred Provider"] = display_df["Preferred Provider"].map({True: "⭐ Yes", False: "No"})
-
     # Round distance to 1 decimal place for cleaner display
     if "Distance (Miles)" in display_df.columns:
         display_df["Distance (Miles)"] = display_df["Distance (Miles)"].round(1)
@@ -229,12 +224,113 @@ if available:
 else:
     st.error("❌ No displayable columns in results.")
 
+st.divider()
+
+# Map visualization
+st.subheader("🗺️ Provider Locations")
+
+# Prepare map data - filter to only providers with valid coordinates
+map_data = scored_df[scored_df['Latitude'].notna() & scored_df['Longitude'].notna()].copy()
+
+if not map_data.empty and PYDECK_AVAILABLE:
+    # Prepare provider locations for the map
+    map_data['lat'] = pd.to_numeric(map_data['Latitude'], errors='coerce')
+    map_data['lon'] = pd.to_numeric(map_data['Longitude'], errors='coerce')
+    
+    # Remove any remaining invalid coordinates
+    map_data = map_data.dropna(subset=['lat', 'lon'])
+    
+    if not map_data.empty:
+        # Create tooltip-friendly column names (pydeck doesn't like spaces/parentheses)
+        map_data['provider_name'] = map_data['Full Name'] if 'Full Name' in map_data.columns else 'Unknown'
+        map_data['distance_miles'] = map_data['Distance (Miles)'].round(1) if 'Distance (Miles)' in map_data.columns else 0
+        map_data['match_score'] = map_data['Score'].round(3) if 'Score' in map_data.columns else 0
+        map_data['specialty'] = map_data['Specialty'] if 'Specialty' in map_data.columns else 'N/A'
+        
+        # Create user location data
+        user_location = pd.DataFrame({
+            'lat': [st.session_state['user_lat']],
+            'lon': [st.session_state['user_lon']],
+            'provider_name': ['Your Location'],
+            'color': [[255, 0, 0, 200]]  # Red for user location
+        })
+        
+        # Add color coding for providers based on rank/score
+        # Top 3 providers get special colors, rest are blue
+        colors = []
+        for idx in range(len(map_data)):
+            if idx == 0:
+                colors.append([34, 139, 34, 200])  # Top: Green
+            elif idx == 1:
+                colors.append([255, 215, 0, 200])  # Second: Gold
+            elif idx == 2:
+                colors.append([255, 140, 0, 200])  # Third: Dark orange
+            else:
+                colors.append([100, 149, 237, 180])  # Others: Cornflower blue
+        map_data['color'] = colors
+        
+        # Set up the view centered on user location
+        view_state = pdk.ViewState(
+            latitude=st.session_state['user_lat'],
+            longitude=st.session_state['user_lon'],
+            zoom=10,
+            pitch=0,
+        )
+        
+        # Create provider layer
+        provider_layer = pdk.Layer(
+            'ScatterplotLayer',
+            data=map_data,
+            get_position='[lon, lat]',
+            get_color='color',
+            get_radius=300,
+            pickable=True,
+            auto_highlight=True,
+        )
+        
+        # Create user location layer
+        user_layer = pdk.Layer(
+            'ScatterplotLayer',
+            data=user_location,
+            get_position='[lon, lat]',
+            get_color='color',
+            get_radius=400,
+            pickable=True,
+        )
+        
+        # Create the deck
+        deck = pdk.Deck(
+            layers=[provider_layer, user_layer],
+            initial_view_state=view_state,
+            tooltip={
+                'html': '<b>{provider_name}</b><br/>{specialty}<br/>Distance: {distance_miles} miles<br/>Score: {match_score}',
+                'style': {
+                    'backgroundColor': 'steelblue',
+                    'color': 'white'
+                }
+            }
+        )
+        
+        st.pydeck_chart(deck)
+        
+        # Legend
+        st.caption("🔴 Your Location | 🟢 Best Match | 🟡 2nd Best | 🟠 3rd Best | 🔵 Other Providers")
+    else:
+        st.info("ℹ️ No providers with valid coordinates to display on map.")
+elif not map_data.empty:
+    # Fallback to simple st.map if pydeck not available
+    st.info("💡 Install pydeck for an enhanced interactive map: `pip install pydeck`")
+    simple_map_data = map_data[['Latitude', 'Longitude']].rename(columns={'Latitude': 'lat', 'Longitude': 'lon'})
+    st.map(simple_map_data)
+else:
+    st.info("ℹ️ No providers with valid coordinates to display on map.")
+
+st.divider()
+
 # Scoring details in expander at the bottom
 with st.expander("📊 How Scoring Works"):
     alpha = st.session_state.get("alpha", 0.5)
     beta = st.session_state.get("beta", 0.5)
-    gamma = st.session_state.get("gamma", 0.0)
-    pref = st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1))
 
     st.markdown(
         """
@@ -244,10 +340,7 @@ with st.expander("📊 How Scoring Works"):
     """
     )
 
-    formula_parts = [f"**Distance** × {alpha:.2f}", f"**Outbound Referrals** × {beta:.2f}"]
-    if gamma > 0:
-        formula_parts.append(f"**Inbound Referrals** × {gamma:.2f}")
-    formula_parts.append(f"**Preferred Status** × {pref:.2f}")
+    formula_parts = [f"**Distance** × {alpha:.2f}", f"**Client Count** × {beta:.2f}"]
 
     st.markdown("Score = " + " + ".join(formula_parts))
 

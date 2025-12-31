@@ -243,9 +243,10 @@ class DataIngestionManager:
             'latitude': 'Latitude',
             'longitude': 'Longitude',
             'pri_spec': 'Specialty',
-            'patient_count': 'Referral Count',
+            'patient_count': 'Client Count',
             'star_value': 'Rating',
             'Ind_PAC_ID': 'Person ID',
+            'gndr': 'Gender',
         }
 
         for old_col, new_col in column_mapping.items():
@@ -260,8 +261,8 @@ class DataIngestionManager:
             df['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce')
         if 'Longitude' in df.columns:
             df['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce')
-        if 'Referral Count' in df.columns:
-            df['Referral Count'] = pd.to_numeric(df['Referral Count'], errors='coerce').fillna(0).astype(int)
+        if 'Client Count' in df.columns:
+            df['Client Count'] = pd.to_numeric(df['Client Count'], errors='coerce').fillna(0).astype(int)
         if 'Rating' in df.columns:
             df['Rating'] = pd.to_numeric(df['Rating'], errors='coerce')
 
@@ -460,11 +461,11 @@ class DataIngestionManager:
         if df.empty or "Full Name" not in df.columns:
             return df
 
-        # If Referral Count already exists and each provider is unique, just clean and return
-        if "Referral Count" in df.columns:
-            # Remove duplicates if any (keep the one with highest referral count)
+        # If Client Count already exists and each provider is unique, just clean and return
+        if "Client Count" in df.columns:
+            # Remove duplicates if any (keep the one with highest client count)
             if df["Full Name"].duplicated().any():
-                df = df.sort_values("Referral Count", ascending=False).drop_duplicates(
+                df = df.sort_values("Client Count", ascending=False).drop_duplicates(
                     subset="Full Name", keep="first"
                 ).reset_index(drop=True)
                 logger.info(f"Deduplicated providers: {len(df)} unique providers")
@@ -476,14 +477,14 @@ class DataIngestionManager:
                     df[col] = df[col].astype(str).replace(["nan", "None", "NaN", ""], "").fillna("")
 
             # Ensure numeric columns are properly typed
-            numeric_cols = ["Latitude", "Longitude", "Referral Count", "Rating"]
+            numeric_cols = ["Latitude", "Longitude", "Client Count", "Rating"]
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
 
-            # Fill NaN referral counts with 0
-            if "Referral Count" in df.columns:
-                df["Referral Count"] = df["Referral Count"].fillna(0).astype(int)
+            # Fill NaN client counts with 0
+            if "Client Count" in df.columns:
+                df["Client Count"] = df["Client Count"].fillna(0).astype(int)
 
             return df
 
@@ -499,14 +500,14 @@ class DataIngestionManager:
         try:
             if agg_dict:
                 provider_df = df.groupby("Full Name", as_index=False).agg(agg_dict)
-                # Rename count column to Referral Count
+                # Rename count column to Client Count
                 if "Person ID" in provider_df.columns:
-                    provider_df = provider_df.rename(columns={"Person ID": "Referral Count"})
+                    provider_df = provider_df.rename(columns={"Person ID": "Client Count"})
                 else:
-                    provider_df["Referral Count"] = 1
+                    provider_df["Client Count"] = 1
             else:
                 provider_df = df.drop_duplicates(subset="Full Name", keep="first")
-                provider_df["Referral Count"] = 1
+                provider_df["Client Count"] = 1
 
             # Clean up missing values in text columns
             text_cols = ["Work Address", "Work Phone", "Specialty"]
@@ -515,7 +516,7 @@ class DataIngestionManager:
                     provider_df[col] = provider_df[col].astype(str).replace(["nan", "None", "NaN", ""], "").fillna("")
 
             # Ensure numeric columns are properly typed
-            numeric_cols = ["Latitude", "Longitude", "Referral Count"]
+            numeric_cols = ["Latitude", "Longitude", "Client Count"]
             for col in numeric_cols:
                 if col in provider_df.columns:
                     provider_df[col] = pd.to_numeric(provider_df[col], errors="coerce")
@@ -657,7 +658,7 @@ class DataIngestionManager:
 
         # Define required columns based on data source
         if source == DataSource.PROVIDER_DATA:
-            required_cols = ["Full Name", "Referral Count"]
+            required_cols = ["Full Name", "Client Count"]
         else:
             required_cols = ["Full Name", "Project ID"]
 
@@ -862,7 +863,7 @@ def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load provider data with referral counts from local parquet files into Streamlit cache.
+    Load provider data with client counts from local parquet files into Streamlit cache.
 
     Loads from local parquet file, aggregates provider data,
     and caches the result in st.cache_data for fast subsequent access.
@@ -874,7 +875,7 @@ def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
         filepath: Ignored - automatic file selection from local parquet is used
 
     Returns:
-        DataFrame with unique providers and referral counts cached in st.cache_data
+        DataFrame with unique providers and client counts cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.PROVIDER_DATA, show_status=False)
 
