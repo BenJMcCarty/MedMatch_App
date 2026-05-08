@@ -212,6 +212,9 @@ api_keys.txt
 .DS_Store
 Thumbs.db
 
+# Git worktrees
+.worktrees/
+
 # Personal development notes
 personal_notes.md
 dev_notes.txt
