@@ -1,15 +1,6 @@
-# Project Title
+# MedMatch Provider Recommender
 
-_A Streamlit app for searching a dataset and visualizing results on a map._
-
-> <!--
-> TODO (Copilot + human):
-> - Replace this paragraph with a 2–3 sentence summary of what this specific app does,
->   based on `app.py` and the modules in `src/` (or wherever the main logic lives).
-> - Mention the real data domain (e.g. real estate, incidents, stores, etc.).
-> -->
-
-This project is a Streamlit-based portfolio app that lets users search a dataset and see the results plotted on an interactive map.
+_A Streamlit app for finding and evaluating healthcare providers based on location, specialty, and experience._
 
 For a deeper technical breakdown, see:
 
@@ -24,6 +15,14 @@ For a deeper technical breakdown, see:
 
 The app uses a dataset of provider contacts (names, addresses, phone numbers, specialties, gender) enriched with patient volume metrics and user ratings. Data is loaded from local parquet files and cached for fast access. The recommendation algorithm scores providers using a weighted combination of distance from the user's location and client count (experience level).
 
+### Data Source
+
+Provider data is sourced from the **Centers for Medicare & Medicaid Services (CMS) Physician & Other Practitioners dataset**, available at:
+
+[https://data.cms.gov/provider-data/dataset/mj5m-pzi6](https://data.cms.gov/provider-data/dataset/mj5m-pzi6)
+
+This dataset includes Medicare-enrolled providers with specialty, practice address, and claims data. The app processes and enriches this data locally for search and recommendation.
+
 This project showcases data-driven decision support, interactive geospatial visualization, and real-time data exploration for healthcare provider networks.
 
 ---
@@ -36,6 +35,8 @@ A short version of the architecture is summarized here. Full details live in `do
 - [app.py](app.py) – Landing page and ETL orchestration. Handles navigation, data loading pipeline from local parquet files to Streamlit cache, and background data refresh on startup.
 - [pages/1_🔎_Search.py](pages/1_🔎_Search.py) – Search interface where users enter address, select specialty, set search radius, and configure scoring weights.
 - [pages/2_📄_Results.py](pages/2_📄_Results.py) – Results display with ranked provider list, detailed provider info cards, and export functionality.
+- [pages/5_👟_Quick_Start_Guide.py](pages/5_👟_Quick_Start_Guide.py) – Onboarding walkthrough explaining how to use the app step by step.
+- [pages/10_🛠️_How_It_Works.py](pages/10_🛠️_How_It_Works.py) – Explanation of the recommendation algorithm and scoring methodology.
 - [pages/20_📊_Data_Dashboard.py](pages/20_📊_Data_Dashboard.py) – Analytics dashboard showing referral statistics and data quality metrics.
 - [pages/30_🔄_Update_Data.py](pages/30_🔄_Update_Data.py) – Data refresh interface for reloading provider and referral data.
 
@@ -56,6 +57,8 @@ A short version of the architecture is summarized here. Full details live in `do
 - [addressing.py](src/utils/addressing.py) – Address validation and formatting utilities.
 - [responsive.py](src/utils/responsive.py) – Responsive layout utilities for adapting the UI to different screen sizes.
 - [freshness.py](src/utils/freshness.py) – Data freshness tracking and display utilities for showing when provider information was last verified.
+- [validation.py](src/utils/validation.py) – Input validation helpers for addresses, coordinates, and phone numbers.
+- [performance.py](src/utils/performance.py) – Decorators and helpers for monitoring function execution time and logging slow operations.
 - [io_utils.py](src/utils/io_utils.py) – Additional I/O utilities including phone number formatting and filename sanitization.
 
 **Key Design Notes:**
@@ -115,13 +118,16 @@ How data moves through the app from user input to ranked provider recommendation
 - **streamlit** (>=1.18.0) – Web application framework for interactive UI
 - **pandas** (>=1.5.0) – Data manipulation and analysis
 - **geopy** (>=2.3.0) – Geocoding via Nominatim (OpenStreetMap)
+- **pydeck** (>=0.9.1) – Interactive map visualization for provider locations
 - **python-docx** (>=0.8.11) – Word document export functionality
 - **pyarrow** (>=8.0.0) – Fast parquet file reading/writing
 - **plotly** (>=5.0.0) – Interactive data visualizations
 - **openpyxl** (>=3.0.10) – Excel file processing
 - **numpy** (>=1.23.0) – Numerical computing support
 - **cachetools** (>=5.0.7) – Advanced caching utilities
-- **boto3** (>=1.28.0) – AWS S3 integration (optional for data uploads)
+- **tqdm** (>=4.67.1) – Progress bars for data processing operations
+- **watchdog** (>=6.0.0) – File system monitoring for automatic data refresh
+- **boto3** (>=1.28.0) – AWS S3 integration for data uploads
 
 ### Install
 
@@ -371,13 +377,13 @@ For detailed AI assistance guidelines, see [docs/AI_ASSISTANTS_GUIDE.md](docs/AI
 ### Working with Data
 
 **Adding new data:**
-1. Go to "🔄 Update Data" page in the app
-2. Upload Excel file with provider/referral data
-3. App processes and saves to parquet format
-4. Cache automatically refreshes
+1. Download updated data from the [CMS Provider dataset](https://data.cms.gov/provider-data/dataset/mj5m-pzi6)
+2. Go to "🔄 Update Data" page in the app
+3. Upload the file with provider data
+4. App processes and saves to parquet format; cache automatically refreshes
 
 **Data location:**
-- Raw data: `data/raw/` (Excel files)
+- Raw data: `data/raw/`
 - Processed data: `data/processed/` (parquet files)
 - Primary file: `Combined_Contacts_and_Reviews.parquet`
 
@@ -428,19 +434,10 @@ git commit --no-verify -m "Quick fix"
 
 ## 8. Future Improvements
 
-<!--
-TODO (Copilot + human):
-Propose realistic improvements based on the current app:
-- Better filters?
-- More map visualizations?
-- Performance improvements?
-- Tests?
-Replace the placeholder list below with project-specific ideas.
--->
-
 Some possible next steps:
 
-- Add more advanced filters (geographic radius, multi-select categories).
-- Add clustering or heatmap visualizations.
-- Add download/export options for filtered results.
-- Add tests for core data and mapping functions.
+- Add multi-select specialty and gender filters.
+- Add clustering or heatmap map visualizations.
+- Add CSV/Excel export for full filtered results.
+- Add unit and integration tests for core data and scoring functions.
+- Surface additional CMS data fields (e.g., Medicare acceptance, languages spoken).
