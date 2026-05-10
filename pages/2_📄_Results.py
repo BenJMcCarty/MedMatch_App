@@ -15,6 +15,14 @@ from src.utils.freshness import format_last_verified_display
 
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
+# Search parameters summary header
+if "street" in st.session_state:
+    summary = f"📍 {st.session_state['street']}, {st.session_state['city']}, {st.session_state['state']} | 🏥 {len(st.session_state.get('selected_specialties', []))} specialty/ies | 📏 {st.session_state.get('max_radius_miles', 10)}mi"
+    col1, col2 = st.columns([0.9, 0.1])
+    col1.info(summary)
+    if col2.button("✏️ Modify", key="modify_search"):
+        st.switch_page("pages/1_🔎_Search.py")
+
 # Sidebar navigation
 if st.sidebar.button("← New Search", type="secondary", width="stretch"):
     st.switch_page("pages/1_🔎_Search.py")
@@ -23,8 +31,6 @@ st.sidebar.divider()
 st.sidebar.caption("**Your Search Criteria:**")
 if "max_radius_miles" in st.session_state:
     st.sidebar.write(f"📍 Radius: {st.session_state['max_radius_miles']} miles")
-if "min_clients" in st.session_state:
-    st.sidebar.write(f"📊 Min. Clients: {st.session_state['min_clients']} cases")
 if "selected_specialties" in st.session_state and st.session_state["selected_specialties"]:
     specialties_str = ", ".join(st.session_state["selected_specialties"])
     st.sidebar.write(f"🏥 Specialties: {specialties_str}")
@@ -34,7 +40,7 @@ if "selected_genders" in st.session_state and st.session_state["selected_genders
 if "street" in st.session_state and "city" in st.session_state:
     st.sidebar.write(f"🏠 From: {st.session_state.get('city', 'N/A')}, {st.session_state.get('state', 'N/A')}")
 
-required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_clients", "max_radius_miles"]
+required_keys = ["user_lat", "user_lon", "alpha", "beta", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
     st.switch_page("pages/1_🔎_Search.py")
@@ -80,7 +86,7 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
             provider_df,
             st.session_state["user_lat"],
             st.session_state["user_lon"],
-            min_clients=st.session_state["min_clients"],
+            min_clients=st.session_state.get("min_clients", 0),
             max_radius_miles=st.session_state["max_radius_miles"],
             alpha=st.session_state["alpha"],
             beta=st.session_state["beta"],

@@ -93,7 +93,7 @@ Define 2-3 sample addresses in constants:
 ```python
 PRESET_ADDRESSES = {
     "Baltimore": {"street": "100 N Charles St", "city": "Baltimore", "state": "MD", "zipcode": "21201"},
-    "Rural Eastern Shore": {"street": "8222 Spadderdock Way", "city": "Russett", "state": "MD", "zipcode": "20724"},
+    "Anne Arundel County": {"street": "8222 Spadderdock Way", "city": "Russett", "state": "MD", "zipcode": "20724"},
     "Montgomery County": {"street": "12500 Parklawn Dr", "city": "Rockville", "state": "MD", "zipcode": "20852"},
 }
 ```
@@ -137,4 +137,4 @@ Purpose: Reinforces user choices; "Modify Search" link goes back to Search page 
 - Reuse resp_columns utility for responsive layout
 - Keep all validation logic unchanged
 - No changes to geocoding or provider matching algorithm
-- CSS/styling: leverage Streamlit's built-in components; minimal custom CSS needed
+- CSS/styling: leverage Streamlit's built-in components; minimize custom CSS needed
