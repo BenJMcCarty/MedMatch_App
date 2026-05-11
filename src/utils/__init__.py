@@ -17,7 +17,7 @@ from .cleaning import (
     validate_and_clean_coordinates,
     validate_provider_data,
 )
-from .geocoding import geocode_address, geocode_address_with_cache, handle_geocoding_error  # noqa: F401
+from .geocoding import geocode_address, handle_geocoding_error  # noqa: F401
 from .io_utils import get_word_bytes, handle_streamlit_error, sanitize_filename
 
 # Provider-specific helpers
@@ -34,7 +34,6 @@ __all__ = [
     "calculate_distances",
     "clean_address_data",
     "geocode_address",
-    "geocode_address_with_cache",
     "get_word_bytes",
     "handle_streamlit_error",
     "load_provider_data",

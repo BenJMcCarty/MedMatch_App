@@ -63,14 +63,6 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
         return None
 
 
-def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
-    """Backward-compatible wrapper for geocode_address.
-
-    Maintained for imports from app.py and other legacy code paths.
-    """
-    return geocode_address(address)
-
-
 def handle_geocoding_error(address: str, error: Exception) -> str:
     et = str(error).lower()
     if "timeout" in et:
@@ -84,4 +76,4 @@ def handle_geocoding_error(address: str, error: Exception) -> str:
     return f"❌ **Geocoding Error**: Unable to find location for '{address}'. (Error: {type(error).__name__})"
 
 
-__all__ = ["geocode_address", "geocode_address_with_cache", "handle_geocoding_error"]
+__all__ = ["geocode_address", "handle_geocoding_error"]
