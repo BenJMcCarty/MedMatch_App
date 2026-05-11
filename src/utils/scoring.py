@@ -50,6 +50,27 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
+
+
+def _rank_normalize(values: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
+    """Convert values to [0, 1] percentile ranks within the array.
+
+    higher_is_better=True: largest value → 1.0, smallest → 0.0.
+    higher_is_better=False: smallest value → 1.0, largest → 0.0.
+    Single-element arrays always return [1.0].
+    Tied values receive the average of their ranks (scipy default).
+    """
+    n = len(values)
+    if n == 0:
+        return values.copy()
+    if n == 1:
+        return np.array([1.0])
+    ranks = rankdata(values, method="average")  # 1..N, 1 = smallest
+    if higher_is_better:
+        return (ranks - 1) / (n - 1)
+    else:
+        return (n - ranks) / (n - 1)
 
 
 def calculate_distances(user_lat: float, user_lon: float, provider_df: pd.DataFrame) -> List[Optional[float]]:
