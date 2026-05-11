@@ -1,5 +1,5 @@
 import pytest
-from src.components.search_assistant import _apply_filters
+from src.components.search_assistant import _apply_filters, _build_confirmation
 
 SPECIALTIES = ["Cardiology", "Internal Medicine", "Psychiatry"]
 GENDERS = ["M", "F"]
@@ -96,3 +96,38 @@ def test_apply_filters_does_not_touch_unspecified_keys():
         SPECIALTIES, GENDERS, state,
     )
     assert state["selected_specialties"] == ["Internal Medicine"]
+
+
+def test_build_confirmation_all_fields():
+    result = _build_confirmation(
+        {"specialty": "Cardiology", "gender": "F", "radius": 25, "profile_choice": "Balanced"}
+    )
+    assert result == "Searching for: Cardiology · Female · 25 mi · Balanced"
+
+
+def test_build_confirmation_specialty_only():
+    result = _build_confirmation(
+        {"specialty": "Psychiatry", "gender": None, "radius": None, "profile_choice": None}
+    )
+    assert result == "Searching for: Psychiatry"
+
+
+def test_build_confirmation_no_fields():
+    result = _build_confirmation(
+        {"specialty": None, "gender": None, "radius": None, "profile_choice": None}
+    )
+    assert result == "Searching for: your criteria"
+
+
+def test_build_confirmation_male_gender_label():
+    result = _build_confirmation(
+        {"specialty": None, "gender": "M", "radius": None, "profile_choice": None}
+    )
+    assert result == "Searching for: Male"
+
+
+def test_build_confirmation_unknown_gender_passthrough():
+    result = _build_confirmation(
+        {"specialty": None, "gender": "NB", "radius": None, "profile_choice": None}
+    )
+    assert result == "Searching for: NB"

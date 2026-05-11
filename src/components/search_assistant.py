@@ -84,12 +84,16 @@ def render_search_assistant(specialties: list[str], genders: list[str]) -> None:
         if result["type"] == "filters":
             _apply_filters(result["data"], specialties, genders, st.session_state)
             reply = _build_confirmation(result["data"])
+            st.session_state["assistant_messages"].append(
+                {"role": "assistant", "content": reply}
+            )
+        elif result["type"] == "followup":
+            st.session_state["assistant_messages"].append(
+                {"role": "assistant", "content": result["data"]}
+            )
         else:
-            reply = result["data"]
+            st.sidebar.error(result["data"])
 
-        st.session_state["assistant_messages"].append(
-            {"role": "assistant", "content": reply}
-        )
         st.rerun()
 
     if st.session_state["assistant_messages"]:
