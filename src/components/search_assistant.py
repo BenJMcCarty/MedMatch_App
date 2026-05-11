@@ -173,62 +173,78 @@ def _build_confirmation(filters: dict) -> str:
 
 
 def render_search_assistant(specialties: list[str], genders: list[str]) -> None:
-    """Render the LLM search assistant in the sidebar."""
+    """Render the LLM search assistant in the main content area."""
     api_key = st.secrets.get("ANTHROPIC_API_KEY")
     if not api_key:
-        st.sidebar.title("🤖 Search Assistant")
-        st.sidebar.warning("⚠️ Assistant unavailable: set ANTHROPIC_API_KEY in .streamlit/secrets.toml")
+        st.warning(
+            "⚠️ Assistant unavailable: set ANTHROPIC_API_KEY in .streamlit/secrets.toml"
+        )
         return
 
     if "assistant_messages" not in st.session_state:
         st.session_state["assistant_messages"] = []
     if "assistant_pending" not in st.session_state:
         st.session_state["assistant_pending"] = False
+    if "assistant_show_card" not in st.session_state:
+        st.session_state["assistant_show_card"] = False
+    if "assistant_last_filters" not in st.session_state:
+        st.session_state["assistant_last_filters"] = None
 
-    st.sidebar.title("🤖 Search Assistant")
-    st.sidebar.caption("Describe what you're looking for in plain English.")
+    st.caption("Describe what you're looking for in plain English.")
 
     for msg in st.session_state["assistant_messages"]:
         label = "**You:** " if msg["role"] == "user" else "**Assistant:** "
-        st.sidebar.markdown(label + msg["content"])
+        st.markdown(label + msg["content"])
 
-    user_input = st.sidebar.text_input(
+    user_input = st.text_input(
         "Your request",
         key="assistant_input",
-        placeholder="e.g. Female cardiologist within 25 miles",
+        placeholder="e.g. Female cardiologist within 25 miles near Baltimore",
         label_visibility="collapsed",
     )
 
-    if st.sidebar.button("Send", key="assistant_send") and user_input.strip():
+    if st.button("Send", key="assistant_send") and user_input.strip():
         st.session_state["assistant_messages"].append(
             {"role": "user", "content": user_input.strip()}
         )
         st.session_state["assistant_pending"] = True
+        st.session_state["assistant_show_card"] = False
         st.rerun()
 
     if st.session_state["assistant_pending"]:
-        with st.sidebar:
-            with st.spinner("Thinking..."):
-                result = chat(st.session_state["assistant_messages"], specialties)
+        with st.spinner("Thinking..."):
+            result = chat(st.session_state["assistant_messages"], specialties)
         st.session_state["assistant_pending"] = False
 
         if result["type"] == "filters":
-            _apply_filters(result["data"], specialties, genders, st.session_state)
+            st.session_state["assistant_last_filters"] = result["data"]
+            st.session_state["assistant_show_card"] = True
             reply = _build_confirmation(result["data"])
             st.session_state["assistant_messages"].append(
                 {"role": "assistant", "content": reply}
             )
-            st.session_state["assistant_auto_search"] = True
         elif result["type"] == "followup":
             st.session_state["assistant_messages"].append(
                 {"role": "assistant", "content": result["data"]}
             )
         else:
-            st.sidebar.error(result["data"])
+            st.error(result["data"])
 
         st.rerun()
 
+    if (
+        st.session_state.get("assistant_show_card")
+        and st.session_state.get("assistant_last_filters") is not None
+    ):
+        _render_confirmation_card(
+            st.session_state["assistant_last_filters"],
+            specialties,
+            genders,
+        )
+
     if st.session_state["assistant_messages"]:
-        if st.sidebar.button("Clear", key="assistant_clear"):
+        if st.button("Clear", key="assistant_clear"):
             st.session_state["assistant_messages"] = []
+            st.session_state["assistant_show_card"] = False
+            st.session_state["assistant_last_filters"] = None
             st.rerun()
