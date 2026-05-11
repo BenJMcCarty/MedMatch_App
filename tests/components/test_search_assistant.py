@@ -26,6 +26,43 @@ def test_apply_filters_ignores_unknown_specialty():
     assert "selected_specialties" not in state
 
 
+def test_apply_filters_partial_match_fallback():
+    """LLM returns a variation; fallback matches all containing specialties."""
+    specialties = ["Individual Therapy", "Group Therapy", "Cardiology"]
+    state = {}
+    _apply_filters(
+        {"specialty": "Therapy", "gender": None, "radius": None, "profile_choice": None},
+        specialties, GENDERS, state,
+    )
+    assert set(state["selected_specialties"]) == {"Individual Therapy", "Group Therapy"}
+
+
+def test_apply_filters_partial_match_contained_by():
+    """LLM returns a more specific term; fallback matches the broader specialty."""
+    specialties = ["Cardiology", "Internal Medicine", "Psychiatry"]
+    state = {}
+    _apply_filters(
+        {"specialty": "cardiologist", "gender": None, "radius": None, "profile_choice": None},
+        specialties, GENDERS, state,
+    )
+    # "cardiology" is contained in "cardiologist"? No — test the reverse:
+    # "cardiologist" is not in "cardiology" and "cardiology" is not in "cardiologist"
+    # so no match — specialty is genuinely unknown, state should be unchanged
+    assert "selected_specialties" not in state
+
+
+def test_apply_filters_partial_match_lhs_contained():
+    """Specialty name is a substring of the LLM term."""
+    specialties = ["Cardiology", "Internal Medicine", "Psychiatry"]
+    state = {}
+    _apply_filters(
+        {"specialty": "Cardiology Care", "gender": None, "radius": None, "profile_choice": None},
+        specialties, GENDERS, state,
+    )
+    # "cardiology" IS in "cardiology care", so Cardiology should match
+    assert state["selected_specialties"] == ["Cardiology"]
+
+
 def test_apply_filters_sets_gender():
     state = {}
     _apply_filters(

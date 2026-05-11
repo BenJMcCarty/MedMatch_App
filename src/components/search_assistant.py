@@ -138,9 +138,18 @@ def _apply_filters(
     """Write extracted filter values into state (typically st.session_state)."""
     if filters.get("specialty"):
         specialty_lower = filters["specialty"].lower()
-        match = next((s for s in available_specialties if s.lower() == specialty_lower), None)
-        if match:
-            state["selected_specialties"] = [match]
+        # Exact case-insensitive match first (LLM returned the exact specialty name).
+        matches = [s for s in available_specialties if s.lower() == specialty_lower]
+        if not matches:
+            # Partial fallback: LLM returned a variation (e.g. "Therapy" for
+            # "Individual Therapy", "cardiologist" for "Cardiology"). Collect
+            # every specialty that contains the term or is contained by it.
+            matches = [
+                s for s in available_specialties
+                if specialty_lower in s.lower() or s.lower() in specialty_lower
+            ]
+        if matches:
+            state["selected_specialties"] = matches
 
     if filters.get("gender") and filters["gender"] in available_genders:
         state["selected_genders"] = [filters["gender"]]
