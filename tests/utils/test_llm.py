@@ -71,3 +71,25 @@ def test_chat_passes_full_message_history():
     called_messages = mock_create.call_args.kwargs["messages"]
     assert len(called_messages) == 3
     assert called_messages[2]["content"] == "Within 25 miles"
+
+
+def test_chat_returns_location_in_filters():
+    payload = '{"specialty": "Cardiology", "gender": null, "radius": null, "profile_choice": null, "location": "Baltimore, MD"}'
+    with patch("src.utils.llm.Anthropic") as mock_cls, patch("src.utils.llm.st") as mock_st:
+        mock_st.secrets.get.return_value = "test-key"
+        mock_cls.return_value.messages.create.return_value = _make_response(payload)
+        result = chat([{"role": "user", "content": "cardiologist near Baltimore"}], ["Cardiology"])
+
+    assert result["type"] == "filters"
+    assert result["data"]["location"] == "Baltimore, MD"
+
+
+def test_chat_returns_null_location_when_not_mentioned():
+    payload = '{"specialty": "Cardiology", "gender": null, "radius": null, "profile_choice": null, "location": null}'
+    with patch("src.utils.llm.Anthropic") as mock_cls, patch("src.utils.llm.st") as mock_st:
+        mock_st.secrets.get.return_value = "test-key"
+        mock_cls.return_value.messages.create.return_value = _make_response(payload)
+        result = chat([{"role": "user", "content": "cardiologist"}], ["Cardiology"])
+
+    assert result["type"] == "filters"
+    assert result["data"]["location"] is None
