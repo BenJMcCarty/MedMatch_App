@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest tests/ -v)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/ --collect-only)",
+      "Bash(python)",
+      "Bash(pytest tests/utils/test_geocoding.py -v)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(python -m pytest tests/utils/test_geocoding.py -v)",
+      "Bash(git show *)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/ -v --tb=short)"
+    ]
+  }
+}
