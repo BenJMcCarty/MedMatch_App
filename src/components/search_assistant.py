@@ -31,6 +31,103 @@ def _profile_to_weights(profile_choice: str | None) -> tuple[float, float]:
     return _PROFILE_WEIGHTS.get(profile_choice or "", (0.5, 0.5))
 
 
+def _execute_card_search(
+    filters: dict,
+    address: str,
+    available_specialties: list[str],
+    available_genders: list[str],
+) -> None:
+    """Geocode address, apply filters to session state, and navigate to Results."""
+    try:
+        from src.utils.geocoding import geocode_address
+    except ImportError:
+        st.error("❌ Geocoding service unavailable. Please use the manual search form.")
+        return
+
+    with st.spinner("🌍 Looking up address coordinates..."):
+        coords = geocode_address(address)
+
+    if not coords:
+        st.error("❌ Unable to find that address. Please check and try again.")
+        return
+
+    user_lat, user_lon = coords
+    alpha, beta = _profile_to_weights(filters.get("profile_choice"))
+
+    _apply_filters(
+        filters,
+        available_specialties,
+        available_genders,
+        st.session_state,
+        user_lat=user_lat,
+        user_lon=user_lon,
+    )
+
+    # Set defaults for keys _apply_filters skips when filter values are null
+    if "selected_specialties" not in st.session_state:
+        st.session_state["selected_specialties"] = available_specialties
+    if "selected_genders" not in st.session_state:
+        st.session_state["selected_genders"] = available_genders
+    if "max_radius_miles" not in st.session_state:
+        st.session_state["max_radius_miles"] = 10
+
+    st.session_state.update({
+        "alpha": float(alpha),
+        "beta": float(beta),
+        "full_address": address,
+    })
+
+    st.session_state.pop("last_best", None)
+    st.session_state.pop("last_scored_df", None)
+
+    st.switch_page("pages/2_📄_Results.py")
+
+
+def _render_confirmation_card(
+    filters: dict,
+    available_specialties: list[str],
+    available_genders: list[str],
+) -> None:
+    """Render the extracted-filter confirmation card below the chat history."""
+    st.markdown("---")
+    st.markdown("**🔍 Ready to Search**")
+
+    location = filters.get("location") or ""
+    address_input = st.text_input(
+        "Client address",
+        value=location,
+        key="card_address_input",
+        placeholder="e.g. 100 N Charles St, Baltimore, MD 21201",
+        label_visibility="visible",
+    )
+
+    if location and _is_city_state_only(location):
+        st.caption(
+            "💡 For best accuracy, add a street address — or continue with city/state."
+        )
+
+    badge_parts = []
+    specialty = filters.get("specialty")
+    if specialty:
+        badge_parts.append(f"🏥 {specialty}")
+    radius = filters.get("radius") or 10
+    badge_parts.append(f"📏 {radius} mi")
+    profile = filters.get("profile_choice") or "Prioritize Proximity (Recommended)"
+    badge_parts.append(f"🎯 {profile}")
+    gender = filters.get("gender")
+    if gender:
+        badge_parts.append(f"👤 {_GENDER_LABELS.get(gender, gender)}")
+    st.caption(" · ".join(badge_parts))
+
+    if st.button(
+        "🔍 Search",
+        key="card_search_btn",
+        disabled=not address_input.strip(),
+        type="primary",
+    ):
+        _execute_card_search(filters, address_input.strip(), available_specialties, available_genders)
+
+
 def _apply_filters(
     filters: dict,
     available_specialties: list[str],
