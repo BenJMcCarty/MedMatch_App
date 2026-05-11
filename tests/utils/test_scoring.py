@@ -114,3 +114,65 @@ def test_best_is_first_row_of_scored_df(three_providers):
         three_providers, distance_weight=1.0, client_weight=0.0, specialty_weight=0.0
     )
     assert best["Full Name"] == scored.iloc[0]["Full Name"]
+
+
+def test_star_weight_higher_rated_provider_wins():
+    df = pd.DataFrame({
+        "Full Name": ["LowStar", "HighStar"],
+        "Distance (Miles)": [1.0, 2.0],
+        "Client Count": [10, 10],
+        "Rating": [2.0, 5.0],
+    })
+    _, scored = recommend_provider(
+        df, distance_weight=0.0, client_weight=0.0, star_weight=1.0, specialty_weight=0.0
+    )
+    assert scored.iloc[0]["Full Name"] == "HighStar"
+
+
+def test_star_missing_rating_gets_median_not_zero():
+    """Provider with NaN Rating is not floored to 0 — it gets the pool median."""
+    df = pd.DataFrame({
+        "Full Name": ["HasRating", "NoRating"],
+        "Distance (Miles)": [1.0, 1.0],
+        "Client Count": [10, 10],
+        "Rating": [4.0, float("nan")],
+    })
+    _, scored = recommend_provider(
+        df, distance_weight=0.0, client_weight=0.0, star_weight=1.0, specialty_weight=0.0
+    )
+    no_rating_score = scored.loc[scored["Full Name"] == "NoRating", "Score"].iloc[0]
+    # median fill gives same value as HasRating → tied rank → score 0.5, not 0.0
+    assert no_rating_score > 0.0
+
+
+def test_specialty_primary_outscores_secondary_match():
+    """Primary specialty match (1.0) outranks secondary match (0.5) when weights favor specialty."""
+    df = pd.DataFrame({
+        "Full Name": ["PrimaryMatch", "SecondaryMatch"],
+        "Distance (Miles)": [5.0, 1.0],  # SecondaryMatch is closer
+        "Client Count": [10, 10],
+        "Specialty": ["Cardiology", "Oncology"],
+        "sec_spec_1": ["", "Cardiology"],
+    })
+    _, scored = recommend_provider(
+        df,
+        distance_weight=0.0,
+        client_weight=0.0,
+        star_weight=0.0,
+        specialty_weight=1.0,
+        selected_specialties=["Cardiology"],
+    )
+    assert scored.iloc[0]["Full Name"] == "PrimaryMatch"
+
+
+def test_specialty_scores_all_ones_when_no_filter():
+    """No selected_specialties means all providers score equally on specialty."""
+    from src.utils.scoring import _specialty_scores
+    df = pd.DataFrame({
+        "Full Name": ["A", "B"],
+        "Distance (Miles)": [1.0, 2.0],
+        "Client Count": [10, 5],
+        "Specialty": ["Cardiology", "Oncology"],
+    })
+    scores = _specialty_scores(df, selected_specialties=None)
+    assert np.all(scores == 1.0)

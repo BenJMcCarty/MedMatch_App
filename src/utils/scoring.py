@@ -19,17 +19,21 @@ Scoring Factors:
 
 Normalization Strategy:
 ----------------------
-Each factor is normalized to [0, 1] scale using min-max normalization within the
-candidate pool. This ensures:
-- All factors contribute proportionally based on their weights
-- Weights can be interpreted as relative importance percentages
-- Score ranges are consistent across different search radii and datasets
+Each factor is normalized to [0, 1] using rank-based (percentile) normalization within
+the candidate pool. This is robust to outliers: one distant provider does not compress
+the scores of nearby providers.
+
+Cold-start handling: providers with zero clients receive an experience floor score
+(default 0.25) instead of 0.0, keeping them competitive when geographically close.
 
 Final Score Calculation:
 -----------------------
-Score = (distance_weight × norm_distance) + (client_weight × norm_client)
+Score = w_dist * rank_dist + w_client * max(rank_client, floor) + w_star * rank_star + w_spec * specialty_score
 
-Where all weights sum to 1.0 (normalized by the calling code).
+Where:
+- rank_* values are [0, 1] percentile ranks within the candidate pool
+- specialty_score is 1.0 (primary match), 0.5 (secondary match), or 0.0
+- Weights are normalized to sum to 1.0
 
 Trade-offs and Limitations:
 ---------------------------
