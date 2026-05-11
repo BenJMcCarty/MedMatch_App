@@ -41,14 +41,17 @@ def _get_rate_limited_geocoder(min_delay_seconds: float = 1.0, max_retries: int 
         return _RATE_LIMITED_GEOCODER
 
 
-@st.cache_data(ttl=60 * 60 * 24)
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
     """Geocode an address; returns (lat, lon) or None. Cached 24hr.
 
-    Normalizes whitespace before the API call so minor formatting
-    differences hit the same cache entry.
+    Normalizes whitespace before lookup so minor formatting differences
+    hit the same cache entry.
     """
-    normalized = _normalize_address(address)
+    return _geocode_address_cached(_normalize_address(address))
+
+
+@st.cache_data(ttl=60 * 60 * 24)
+def _geocode_address_cached(normalized: str) -> Optional[Tuple[float, float]]:
     try:
         geocode_fn = _get_rate_limited_geocoder()
         location = geocode_fn(normalized)

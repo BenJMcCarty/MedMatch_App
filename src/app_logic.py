@@ -382,6 +382,7 @@ def run_recommendation(
         distance_weight=alpha,
         client_weight=beta,
         min_clients=min_clients,
+        selected_specialties=selected_specialties if selected_specialties else None,
     )
     if scored_df is not None and not scored_df.empty and "Full Name" in scored_df.columns:
         scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")

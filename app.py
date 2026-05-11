@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 from src.app_logic import filter_providers_by_radius  # noqa: E402 - must import after set_page_config
 
 # Try to import the real geocoding helper. Tests expect a fallback
-# `geocode_address_with_cache` to exist when `geopy` is not installed.
+# `geocode_address` to exist when `geopy` is not installed.
 try:
     import geopy  # noqa: F401 - optional dependency
 
