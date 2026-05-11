@@ -2,6 +2,8 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.utils.llm import chat
+
 
 def _make_response(text):
     response = MagicMock()
@@ -14,8 +16,6 @@ def test_chat_returns_filters_on_valid_json():
     with patch("src.utils.llm.Anthropic") as mock_cls, patch("src.utils.llm.st") as mock_st:
         mock_st.secrets.get.return_value = "test-key"
         mock_cls.return_value.messages.create.return_value = _make_response(payload)
-
-        from src.utils.llm import chat
         result = chat([{"role": "user", "content": "female cardiologist"}], ["Cardiology"])
 
     assert result["type"] == "filters"
@@ -31,8 +31,6 @@ def test_chat_returns_followup_on_plain_text():
         mock_cls.return_value.messages.create.return_value = _make_response(
             "How far are you willing to travel?"
         )
-
-        from src.utils.llm import chat
         result = chat([{"role": "user", "content": "I need a doctor"}], ["Cardiology"])
 
     assert result["type"] == "followup"
@@ -42,8 +40,6 @@ def test_chat_returns_followup_on_plain_text():
 def test_chat_returns_error_when_api_key_missing():
     with patch("src.utils.llm.st") as mock_st:
         mock_st.secrets.get.return_value = None
-
-        from src.utils.llm import chat
         result = chat([{"role": "user", "content": "test"}], ["Cardiology"])
 
     assert result["type"] == "error"
@@ -54,8 +50,6 @@ def test_chat_returns_error_on_api_exception():
     with patch("src.utils.llm.Anthropic") as mock_cls, patch("src.utils.llm.st") as mock_st:
         mock_st.secrets.get.return_value = "test-key"
         mock_cls.return_value.messages.create.side_effect = Exception("network error")
-
-        from src.utils.llm import chat
         result = chat([{"role": "user", "content": "test"}], ["Cardiology"])
 
     assert result["type"] == "error"
@@ -72,8 +66,6 @@ def test_chat_passes_full_message_history():
         mock_st.secrets.get.return_value = "test-key"
         mock_create = mock_cls.return_value.messages.create
         mock_create.return_value = _make_response(payload)
-
-        from src.utils.llm import chat
         chat(messages, ["Cardiology"])
 
     called_messages = mock_create.call_args.kwargs["messages"]
