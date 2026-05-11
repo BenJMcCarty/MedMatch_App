@@ -110,6 +110,9 @@ def geocode_provider_dataframe(
     if "geocode_verified_at" not in result.columns:
         result["geocode_verified_at"] = None
 
+    if "Full Address" not in result.columns:
+        raise ValueError("DataFrame must contain a 'Full Address' column")
+
     geocode_fn = _get_rate_limited_geocoder()
     total = len(result)
 
@@ -119,7 +122,7 @@ def geocode_provider_dataframe(
                 progress_callback(i + 1, total, str(row.get("Full Name", "")), "nominatim")
             continue
 
-        address = str(row.get("Full Address", "")).strip()
+        address = str(row["Full Address"]).strip()
         now = datetime.now(timezone.utc).isoformat()
 
         if not address:

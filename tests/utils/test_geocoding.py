@@ -199,3 +199,29 @@ def test_geocode_provider_dataframe_initializes_missing_columns():
 
     assert "geocode_source" in result.columns
     assert "geocode_verified_at" in result.columns
+
+
+def test_geocode_provider_dataframe_empty_address_marked_failed():
+    """Rows with empty Full Address are marked failed without calling geocoder."""
+    df = pd.DataFrame({
+        "Full Address": [""],
+        "Full Name": ["Dr. Test"],
+        "latitude": [39.29],
+        "longitude": [-76.61],
+        "geocode_source": ["cms"],
+        "geocode_verified_at": [None],
+    })
+    call_count = [0]
+
+    def fake_geocoder():
+        def geocode(addr, timeout=10):
+            call_count[0] += 1
+            return None
+        return geocode
+
+    with patch("src.utils.geocoding._get_rate_limited_geocoder", fake_geocoder):
+        result = geocode_provider_dataframe(df)
+
+    assert call_count[0] == 0
+    assert result.loc[0, "geocode_source"] == "failed"
+    assert result.loc[0, "geocode_verified_at"] is not None
