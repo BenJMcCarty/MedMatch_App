@@ -1,4 +1,5 @@
 """Geocoding helpers with caching and rate limiting."""
+import re
 from typing import Any, Optional, Tuple
 
 import streamlit as st
@@ -7,6 +8,11 @@ from geopy.geocoders import Nominatim
 
 # Cached factory
 _RATE_LIMITED_GEOCODER = None
+
+
+def _normalize_address(address: str) -> str:
+    """Collapse whitespace for consistent geocoder cache keys."""
+    return re.sub(r"\s+", " ", address.strip())
 
 
 def _get_rate_limited_geocoder(min_delay_seconds: float = 1.0, max_retries: int = 3):
