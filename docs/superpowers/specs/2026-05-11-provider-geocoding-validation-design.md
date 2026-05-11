@@ -22,8 +22,10 @@ Snowflake DDL, and distance calculation can move entirely into SQL (`ST_DISTANCE
 
 Keep existing CMS coordinates as the baseline. Geocode each provider's `Full Address` via
 Nominatim. When Nominatim returns a result, overwrite `latitude`/`longitude` in-place and mark
-the row `geocode_source = 'nominatim'`. When Nominatim fails, keep the CMS value and mark
-`geocode_source = 'cms'`. Track timestamps so the dashboard can show staleness.
+the row `geocode_source = 'nominatim'`. When Nominatim returns no result (address not found), keep the CMS value and mark
+`geocode_source = 'cms'`. When Nominatim raises an exception (timeout, service error), keep the
+CMS value and mark `geocode_source = 'failed'`. Track timestamps so the dashboard can show
+staleness.
 
 Rejected alternatives:
 - **Full in-place replacement**: loses CMS baseline; no resumability if Nominatim fails mid-run.
