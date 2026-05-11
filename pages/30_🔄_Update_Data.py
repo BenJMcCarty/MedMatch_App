@@ -148,3 +148,109 @@ if st.button("🔄 Clear cache and reload data"):
     except Exception:
         st.error("Could not clear cache.")
         st.code(traceback.format_exc())
+
+st.markdown("---")
+
+st.markdown("#### 🌐 Validate Provider Coordinates")
+st.markdown(
+    "Geocode each provider's address via Nominatim and compare against CMS coordinates. "
+    "Results are saved back to the parquet file and the cache is refreshed automatically."
+)
+st.warning(
+    "⏱️ A full validation run takes approximately 41 minutes for 2,469 providers "
+    "(Nominatim rate limit: 1 request/second). Use **Validate Unverified Only** for fast incremental updates."
+)
+
+with st.expander("📍 Validate Provider Coordinates", expanded=False):
+    # Show current geocode coverage
+    try:
+        from pathlib import Path as _Path
+        import pandas as _pd
+
+        _parquet = _Path("data/processed/Combined_Contacts_and_Reviews.parquet")
+        if _parquet.exists():
+            _df_preview = _pd.read_parquet(_parquet)
+            if "geocode_source" in _df_preview.columns:
+                _counts = _df_preview["geocode_source"].value_counts()
+                st.markdown("**Current geocode coverage:**")
+                gcol1, gcol2, gcol3 = st.columns(3)
+                with gcol1:
+                    st.metric("✅ Nominatim verified", int(_counts.get("nominatim", 0)))
+                with gcol2:
+                    st.metric("🔵 CMS only", int(_counts.get("cms", 0)))
+                with gcol3:
+                    st.metric("❌ Failed", int(_counts.get("failed", 0)))
+            else:
+                st.info("No geocode data yet. Run validation to populate.")
+    except Exception:
+        st.info("Could not read current geocode status.")
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        run_incremental = st.button(
+            "🔍 Validate Unverified Providers",
+            key="geocode_incremental",
+            help="Skip rows already marked as Nominatim-verified. Fast for incremental updates.",
+        )
+
+    with col_b:
+        run_full = st.button(
+            "🔄 Re-validate All Providers",
+            key="geocode_full",
+            help="Re-geocode every provider regardless of existing source. Takes ~41 minutes.",
+        )
+
+    if run_incremental or run_full:
+        force = run_full
+        import os
+        import tempfile
+        import pandas as pd
+        from pathlib import Path
+        from src.utils.geocoding import geocode_provider_dataframe
+        from src.data.ingestion import refresh_data_cache
+
+        parquet_path = Path("data/processed/Combined_Contacts_and_Reviews.parquet")
+
+        if not parquet_path.exists():
+            st.error("❌ Parquet file not found. Please upload data first.")
+        else:
+            df = pd.read_parquet(parquet_path)
+            total = len(df)
+            progress_bar = st.progress(0.0, text="Starting geocoding...")
+
+            def _ui_progress(current, total_count, name, source):
+                pct = current / total_count
+                symbol = "✓" if source == "nominatim" else ("~" if source == "cms" else "✗")
+                progress_bar.progress(pct, text=f"[{current}/{total_count}] {name} — {symbol} {source}")
+
+            with st.spinner("Geocoding providers..."):
+                result_df = geocode_provider_dataframe(df, force=force, progress_callback=_ui_progress)
+
+            # Atomic write
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".parquet", dir=parquet_path.parent)
+            try:
+                os.close(tmp_fd)
+                result_df.to_parquet(tmp_path, index=False)
+                os.replace(tmp_path, parquet_path)
+            except Exception as exc:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                st.error(f"❌ Failed to save results: {exc}")
+                st.stop()
+
+            refresh_data_cache()
+            progress_bar.progress(1.0, text="Done!")
+
+            final_counts = result_df["geocode_source"].value_counts()
+            nominatim_n = int(final_counts.get("nominatim", 0))
+            cms_n = int(final_counts.get("cms", 0))
+            failed_n = int(final_counts.get("failed", 0))
+
+            st.success(
+                f"✅ Geocoding complete: **{nominatim_n} Nominatim**, "
+                f"**{cms_n} CMS fallback**, **{failed_n} failed**"
+            )
+            st.info("💡 Navigate to the Data Dashboard to see updated coordinate source metrics.")
