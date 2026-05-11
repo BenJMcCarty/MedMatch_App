@@ -201,6 +201,23 @@ def display_data_quality_dashboard() -> None:
                     }
                 )
 
+            # Geocode source breakdown
+            if "geocode_source" in provider_df.columns:
+                source_counts = provider_df["geocode_source"].value_counts()
+                for source_label, col_key in [
+                    ("Coordinates — Nominatim verified", "nominatim"),
+                    ("Coordinates — CMS only", "cms"),
+                    ("Coordinates — Failed", "failed"),
+                ]:
+                    count = int(source_counts.get(col_key, 0))
+                    pct = (count / total_records * 100) if total_records > 0 else 0
+                    quality_metrics.append({
+                        "Metric": source_label,
+                        "Complete Records": count,
+                        "Total Records": total_records,
+                        "Completeness": f"{pct:.1f}%",
+                    })
+
             # Check for phone numbers
             if "Phone Number" in provider_df.columns:
                 valid_phones = provider_df[provider_df["Phone Number"].notna() & (provider_df["Phone Number"] != "")]
@@ -361,21 +378,40 @@ def display_data_quality_dashboard() -> None:
 
             with col2:
                 st.markdown("### Coordinate Quality")
-                total_providers = len(provider_df)
-                valid_coords_count = len(valid_coords)
-                missing_coords = total_providers - valid_coords_count
+                total_providers_map = len(provider_df)
+                valid_coords_map = len(valid_coords)
+                missing_coords_map = total_providers_map - valid_coords_map
 
                 coord_quality_fig = go.Figure(
                     data=[
                         go.Pie(
                             labels=["Valid Coordinates", "Missing Coordinates"],
-                            values=[valid_coords_count, missing_coords],
+                            values=[valid_coords_map, missing_coords_map],
                             hole=0.4,
                         )
                     ]
                 )
                 coord_quality_fig.update_layout(title="Coordinate Completeness")
                 st.plotly_chart(coord_quality_fig, use_container_width=True, config=PLOTLY_CONFIG)
+
+                if "geocode_source" in provider_df.columns:
+                    source_counts = provider_df["geocode_source"].value_counts()
+                    source_fig = go.Figure(
+                        data=[
+                            go.Pie(
+                                labels=["Nominatim", "CMS", "Failed"],
+                                values=[
+                                    int(source_counts.get("nominatim", 0)),
+                                    int(source_counts.get("cms", 0)),
+                                    int(source_counts.get("failed", 0)),
+                                ],
+                                hole=0.4,
+                                marker_colors=["#2ecc71", "#3498db", "#e74c3c"],
+                            )
+                        ]
+                    )
+                    source_fig.update_layout(title="Coordinate Source")
+                    st.plotly_chart(source_fig, use_container_width=True, config=PLOTLY_CONFIG)
         else:
             st.warning("No valid coordinates found in provider data.")
 
