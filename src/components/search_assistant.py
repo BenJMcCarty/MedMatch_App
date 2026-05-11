@@ -11,6 +11,25 @@ _VALID_PROFILE_CHOICES = {
 
 _GENDER_LABELS = {"M": "Male", "F": "Female"}
 
+_PROFILE_WEIGHTS: dict[str, tuple[float, float]] = {
+    "Prioritize Proximity (Recommended)": (1.0, 0.0),
+    "Balanced": (0.5, 0.5),
+    "Prioritize Experience": (0.3, 0.7),
+}
+
+
+def _is_city_state_only(location: str) -> bool:
+    """Return True if location contains no digit (i.e. no street number)."""
+    return not any(ch.isdigit() for ch in location)
+
+
+def _profile_to_weights(profile_choice: str | None) -> tuple[float, float]:
+    """Return (alpha, beta) normalized distance/client weights for a profile choice.
+
+    Unknown or None profiles default to Balanced (0.5, 0.5).
+    """
+    return _PROFILE_WEIGHTS.get(profile_choice or "", (0.5, 0.5))
+
 
 def _apply_filters(
     filters: dict,

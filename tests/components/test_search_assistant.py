@@ -1,5 +1,8 @@
 import pytest
-from src.components.search_assistant import _apply_filters, _build_confirmation
+from src.components.search_assistant import (
+    _apply_filters, _build_confirmation,
+    _is_city_state_only, _profile_to_weights,
+)
 
 SPECIALTIES = ["Cardiology", "Internal Medicine", "Psychiatry"]
 GENDERS = ["M", "F"]
@@ -163,3 +166,49 @@ def test_apply_filters_ignores_partial_lat_lon():
     )
     assert "user_lat" not in state
     assert "user_lon" not in state
+
+
+def test_is_city_state_only_returns_true_for_city_state():
+    assert _is_city_state_only("Baltimore, MD") is True
+
+
+def test_is_city_state_only_returns_true_for_state_only():
+    assert _is_city_state_only("Maryland") is True
+
+
+def test_is_city_state_only_returns_false_for_street_address():
+    assert _is_city_state_only("100 N Charles St, Baltimore, MD") is False
+
+
+def test_is_city_state_only_returns_false_for_zip_code():
+    assert _is_city_state_only("21201") is False
+
+
+def test_profile_to_weights_proximity():
+    alpha, beta = _profile_to_weights("Prioritize Proximity (Recommended)")
+    assert alpha == pytest.approx(1.0)
+    assert beta == pytest.approx(0.0)
+
+
+def test_profile_to_weights_balanced():
+    alpha, beta = _profile_to_weights("Balanced")
+    assert alpha == pytest.approx(0.5)
+    assert beta == pytest.approx(0.5)
+
+
+def test_profile_to_weights_experience():
+    alpha, beta = _profile_to_weights("Prioritize Experience")
+    assert alpha == pytest.approx(0.3)
+    assert beta == pytest.approx(0.7)
+
+
+def test_profile_to_weights_unknown_defaults_to_balanced():
+    alpha, beta = _profile_to_weights(None)
+    assert alpha == pytest.approx(0.5)
+    assert beta == pytest.approx(0.5)
+
+
+def test_profile_to_weights_custom_defaults_to_balanced():
+    alpha, beta = _profile_to_weights("Custom Settings")
+    assert alpha == pytest.approx(0.5)
+    assert beta == pytest.approx(0.5)
