@@ -2,6 +2,8 @@
 import re
 from typing import Any, Optional, Tuple
 
+import pandas as pd
+
 import streamlit as st
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 from geopy.geocoders import Nominatim
@@ -79,4 +81,72 @@ def handle_geocoding_error(address: str, error: Exception) -> str:
     return f"❌ **Geocoding Error**: Unable to find location for '{address}'. (Error: {type(error).__name__})"
 
 
-__all__ = ["geocode_address", "handle_geocoding_error"]
+def geocode_provider_dataframe(
+    df: pd.DataFrame,
+    force: bool = False,
+    progress_callback=None,
+) -> pd.DataFrame:
+    """Geocode provider Full Address values and annotate with source/timestamp.
+
+    For each row (skipping geocode_source=='nominatim' rows unless force=True):
+      - Nominatim returns location → update latitude/longitude, source='nominatim'
+      - Nominatim returns None     → keep existing coords, source='cms'
+      - Nominatim raises exception → keep existing coords, source='failed'
+    geocode_verified_at is set to the current UTC timestamp in all processed rows.
+
+    Args:
+        df: DataFrame with 'Full Address', 'latitude', 'longitude' columns.
+        force: Re-geocode rows already marked 'nominatim' when True.
+        progress_callback: Optional callable(current, total, name, source).
+
+    Returns:
+        Copy of df with updated latitude, longitude, geocode_source, geocode_verified_at.
+    """
+    from datetime import datetime, timezone
+
+    result = df.copy()
+    if "geocode_source" not in result.columns:
+        result["geocode_source"] = "cms"
+    if "geocode_verified_at" not in result.columns:
+        result["geocode_verified_at"] = None
+
+    geocode_fn = _get_rate_limited_geocoder()
+    total = len(result)
+
+    for i, (idx, row) in enumerate(result.iterrows()):
+        if not force and row.get("geocode_source") == "nominatim":
+            if progress_callback:
+                progress_callback(i + 1, total, str(row.get("Full Name", "")), "nominatim")
+            continue
+
+        address = str(row.get("Full Address", "")).strip()
+        now = datetime.now(timezone.utc).isoformat()
+
+        if not address:
+            result.at[idx, "geocode_source"] = "failed"
+            result.at[idx, "geocode_verified_at"] = now
+            if progress_callback:
+                progress_callback(i + 1, total, str(row.get("Full Name", "")), "failed")
+            continue
+
+        try:
+            location = geocode_fn(_normalize_address(address))
+            if location:
+                result.at[idx, "latitude"] = location.latitude
+                result.at[idx, "longitude"] = location.longitude
+                source = "nominatim"
+            else:
+                source = "cms"
+        except Exception:
+            source = "failed"
+
+        result.at[idx, "geocode_source"] = source
+        result.at[idx, "geocode_verified_at"] = now
+
+        if progress_callback:
+            progress_callback(i + 1, total, str(row.get("Full Name", "")), source)
+
+    return result
+
+
+__all__ = ["geocode_address", "geocode_provider_dataframe", "handle_geocoding_error"]
