@@ -360,16 +360,24 @@ def calculate_distances(user_lat: float, user_lon: float, provider_df: pd.DataFr
 def recommend_provider(
     provider_df: pd.DataFrame,
     distance_weight: float = 0.5,
-    referral_weight: float = 0.5,
-    inbound_weight: float = 0.0,
-    min_referrals: Optional[int] = None,
+    client_weight: float = 0.3,
+    star_weight: float = 0.0,
+    specialty_weight: float = 0.2,
+    selected_specialties: Optional[List[str]] = None,
+    experience_floor: float = 0.25,
+    min_clients: Optional[int] = None,
 ) -> Tuple[Optional[pd.Series], Optional[pd.DataFrame]]:
-    """Recommend a provider using the consolidated scoring algorithm.
-
-    This wrapper preserves the legacy import while delegating to the
-    canonical implementation in `consolidated_functions`.
-    """
-    return _recommend_provider(provider_df, distance_weight, referral_weight, inbound_weight, min_referrals)
+    """Recommend a provider using the scoring algorithm in src.utils.scoring."""
+    return _recommend_provider(
+        provider_df,
+        distance_weight=distance_weight,
+        client_weight=client_weight,
+        star_weight=star_weight,
+        specialty_weight=specialty_weight,
+        selected_specialties=selected_specialties,
+        experience_floor=experience_floor,
+        min_clients=min_clients,
+    )
 
 
 def validate_address(address: str) -> Tuple[bool, str]:
