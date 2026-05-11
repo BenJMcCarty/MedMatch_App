@@ -54,6 +54,13 @@ def _execute_card_search(
     user_lat, user_lon = coords
     alpha, beta = _profile_to_weights(filters.get("profile_choice"))
 
+    # Always reset to full defaults first so a second chatbot search never
+    # inherits stale values from a previous search.
+    st.session_state["selected_specialties"] = available_specialties
+    st.session_state["selected_genders"] = available_genders
+    st.session_state["max_radius_miles"] = 10
+
+    # Now override defaults with whatever the LLM actually extracted.
     _apply_filters(
         filters,
         available_specialties,
@@ -62,14 +69,6 @@ def _execute_card_search(
         user_lat=user_lat,
         user_lon=user_lon,
     )
-
-    # Set defaults for keys _apply_filters skips when filter values are null
-    if "selected_specialties" not in st.session_state:
-        st.session_state["selected_specialties"] = available_specialties
-    if "selected_genders" not in st.session_state:
-        st.session_state["selected_genders"] = available_genders
-    if "max_radius_miles" not in st.session_state:
-        st.session_state["max_radius_miles"] = 10
 
     st.session_state.update({
         "alpha": float(alpha),

@@ -15,9 +15,14 @@ from src.utils.freshness import format_last_verified_display
 
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
-# Search parameters summary header
-if "street" in st.session_state:
-    summary = f"📍 {st.session_state['street']}, {st.session_state['city']}, {st.session_state['state']} | 🏥 {len(st.session_state.get('selected_specialties', []))} specialty/ies | 📏 {st.session_state.get('max_radius_miles', 10)}mi"
+# Search parameters summary header — works for both form and chatbot paths
+_addr_display = (
+    f"{st.session_state['street']}, {st.session_state['city']}, {st.session_state['state']}"
+    if "street" in st.session_state
+    else st.session_state.get("full_address", "")
+)
+if _addr_display:
+    summary = f"📍 {_addr_display} | 🏥 {len(st.session_state.get('selected_specialties', []))} specialty/ies | 📏 {st.session_state.get('max_radius_miles', 10)}mi"
     col1, col2 = st.columns([0.9, 0.1])
     col1.info(summary)
     if col2.button("✏️ Modify", key="modify_search"):
@@ -39,6 +44,8 @@ if "selected_genders" in st.session_state and st.session_state["selected_genders
     st.sidebar.write(f"👤 Genders: {genders_str}")
 if "street" in st.session_state and "city" in st.session_state:
     st.sidebar.write(f"🏠 From: {st.session_state.get('city', 'N/A')}, {st.session_state.get('state', 'N/A')}")
+elif "full_address" in st.session_state:
+    st.sidebar.write(f"🏠 From: {st.session_state['full_address']}")
 
 required_keys = ["user_lat", "user_lon", "alpha", "beta", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
