@@ -15,6 +15,7 @@ dependencies = [
     "pyarrow>=8.0.0",
     "pydeck>=0.9.1",
     "python-docx>=0.8.11",
+    "scipy>=1.11.0",
     "streamlit>=1.18.0",
     "tqdm>=4.67.1",
     "watchdog>=6.0.0",
