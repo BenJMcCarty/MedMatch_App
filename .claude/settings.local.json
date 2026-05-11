@@ -12,7 +12,10 @@
       "Bash(git show *)",
       "Bash(python -m pytest tests/ -v)",
       "Bash(python -m pytest tests/ -v --tb=short)",
-      "Bash(python -m pytest tests/components/test_search_assistant.py -v)"
+      "Bash(python -m pytest tests/components/test_search_assistant.py -v)",
+      "Bash(cd \"/c/Users/Ben/Documents/Data_Science_Projects/MedMatch_App\" && grep \"| \\\\`src/utils/llm.py\\\\`\" docs/superpowers/plans/2026-05-11-chatbot-first-search.md)",
+      "Read(//c/c/Users/Ben/Documents/Data_Science_Projects/MedMatch_App/docs/superpowers/plans/**)",
+      "Bash(pytest tests/utils/test_llm.py -v)"
     ]
   }
 }
