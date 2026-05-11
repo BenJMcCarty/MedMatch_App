@@ -15,6 +15,8 @@ except Exception:
     geocode_address = None
     GEOCODE_AVAILABLE = False
 
+from src.components.search_assistant import render_search_assistant
+
 # Constants - define once at module level for performance
 PRESET_ADDRESSES = {
     "Baltimore": {"street": "100 N Charles St", "city": "Baltimore", "state": "MD", "zipcode": "21201"},
@@ -81,6 +83,10 @@ st.divider()
 # Stats banner showing available providers
 provider_count = len(provider_df)
 st.info(f"📊 **{provider_count:,} providers available** in our network")
+
+available_specialties = get_unique_specialties(provider_df)
+available_genders = get_unique_genders(provider_df)
+render_search_assistant(specialties=available_specialties, genders=available_genders)
 
 # Address input section with improved layout
 st.subheader("📍 Client Address")
@@ -216,7 +222,6 @@ with st.expander("🔍 Search Criteria", expanded=True):
 
     with col_specialty:
         st.caption("**Provider Specialties**")
-        available_specialties = get_unique_specialties(provider_df)
 
         if available_specialties:
             default_selected = st.session_state.get("selected_specialties", available_specialties)
@@ -255,7 +260,6 @@ with st.expander("⚙️ Advanced Filters (Optional)", expanded=False):
     st.session_state["use_test_address"] = use_test_address
 
     st.caption("**Provider Gender**")
-    available_genders = get_unique_genders(provider_df)
 
     if available_genders:
         default_selected_genders = st.session_state.get("selected_genders", available_genders)
