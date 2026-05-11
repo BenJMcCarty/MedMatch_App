@@ -90,44 +90,104 @@ def calculate_distances(user_lat: float, user_lon: float, provider_df: pd.DataFr
     return [None if np.isnan(d) else float(d) for d in distances]
 
 
+def _specialty_scores(
+    df: pd.DataFrame, selected_specialties: Optional[List[str]]
+) -> np.ndarray:
+    """Return specialty match quality per row: 1.0 primary, 0.5 secondary, 0.0 none."""
+    n = len(df)
+    if not selected_specialties or "Specialty" not in df.columns:
+        return np.ones(n)
+
+    selected_set = {s.strip() for s in selected_specialties}
+    sec_cols = [c for c in ["sec_spec_1", "sec_spec_2", "sec_spec_3", "sec_spec_4"] if c in df.columns]
+    scores = np.zeros(n)
+
+    for i, (_, row) in enumerate(df.iterrows()):
+        pri = str(row.get("Specialty", "")).strip()
+        if pri in selected_set:
+            scores[i] = 1.0
+            continue
+        for col in sec_cols:
+            sec = str(row.get(col, "")).strip()
+            if sec and sec in selected_set:
+                scores[i] = 0.5
+                break
+
+    return scores
+
+
+EXPERIENCE_FLOOR: float = 0.25
+
+
 def recommend_provider(
     provider_df: pd.DataFrame,
     distance_weight: float = 0.5,
-    client_weight: float = 0.5,
+    client_weight: float = 0.3,
+    star_weight: float = 0.0,
+    specialty_weight: float = 0.2,
+    selected_specialties: Optional[List[str]] = None,
+    experience_floor: float = EXPERIENCE_FLOOR,
     min_clients: Optional[int] = None,
 ) -> Tuple[Optional[pd.Series], Optional[pd.DataFrame]]:
     df = provider_df.copy(deep=True)
     df = df[df["Distance (Miles)"].notnull() & df["Client Count"].notnull()]
     if min_clients is not None:
         df = df[df["Client Count"] >= min_clients]
-
     if df.empty:
         return None, None
 
-    client_range = df["Client Count"].max() - df["Client Count"].min()
-    dist_range = df["Distance (Miles)"].max() - df["Distance (Miles)"].min()
+    n = len(df)
 
-    # Normalize client counts: higher client count = HIGHER (better) score
-    # More clients indicates more experience
-    df["norm_rank"] = (df["Client Count"] - df["Client Count"].min()) / client_range if client_range != 0 else 0
-    # Normalize distance: closer = HIGHER (better) score
-    df["norm_dist"] = (df["Distance (Miles)"].max() - df["Distance (Miles)"]) / dist_range if dist_range != 0 else 0
+    # Rank-normalize distance (lower = better)
+    dist_arr = df["Distance (Miles)"].to_numpy(dtype=float)
+    rank_dist = _rank_normalize(dist_arr, higher_is_better=False)
 
-    df["Score"] = distance_weight * df["norm_dist"] + client_weight * df["norm_rank"]
+    # Rank-normalize client count (higher = better); apply experience floor
+    client_arr = df["Client Count"].to_numpy(dtype=float)
+    rank_client = np.maximum(_rank_normalize(client_arr, higher_is_better=True), experience_floor)
+
+    # Rank-normalize star rating (higher = better); fill missing with median
+    if "Rating" in df.columns and star_weight > 0:
+        star_arr = df["Rating"].to_numpy(dtype=float)
+        median_star = float(np.nanmedian(star_arr)) if not np.all(np.isnan(star_arr)) else 0.0
+        star_arr = np.where(np.isnan(star_arr), median_star, star_arr)
+        rank_star = _rank_normalize(star_arr, higher_is_better=True)
+    else:
+        rank_star = np.ones(n)
+
+    # Specialty match quality
+    spec_scores = _specialty_scores(df, selected_specialties)
+
+    # Normalize weights to sum to 1.0
+    total = distance_weight + client_weight + star_weight + specialty_weight
+    if total == 0:
+        return None, None
+    w_dist = distance_weight / total
+    w_client = client_weight / total
+    w_star = star_weight / total
+    w_spec = specialty_weight / total
+
+    df = df.copy()
+    df["Score"] = (
+        w_dist * rank_dist
+        + w_client * rank_client
+        + w_star * rank_star
+        + w_spec * spec_scores
+    )
 
     if distance_weight > client_weight:
         sort_keys = ["Score", "Distance (Miles)", "Client Count"]
+        ascending = [False, True, False]
     else:
         sort_keys = ["Score", "Client Count", "Distance (Miles)"]
+        ascending = [False, False, True]
 
-    candidate_keys = sort_keys + ["Full Name"]
-    sort_keys_final = [k for k in candidate_keys if k in df.columns]
-    ascending = [False] * len(sort_keys_final)  # Higher scores are better, so descending sort
-    # Exception: Full Name should still be ascending for alphabetical tie-breaking
-    for i, key in enumerate(sort_keys_final):
-        if key == "Full Name":
-            ascending[i] = True
+    if "Full Name" in df.columns:
+        sort_keys.append("Full Name")
+        ascending.append(True)
 
-    df_sorted = df.sort_values(by=sort_keys_final, ascending=ascending).reset_index(drop=True)
-    best = df_sorted.iloc[0]
-    return best, df_sorted
+    sort_keys_final = [k for k in sort_keys if k in df.columns]
+    ascending_final = ascending[: len(sort_keys_final)]
+
+    df_sorted = df.sort_values(by=sort_keys_final, ascending=ascending_final).reset_index(drop=True)
+    return df_sorted.iloc[0], df_sorted
