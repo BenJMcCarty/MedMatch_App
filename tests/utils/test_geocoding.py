@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from src.utils.geocoding import _normalize_address, geocode_address
 
 
@@ -60,3 +61,23 @@ def test_geocode_address_normalizes_before_lookup():
         geocode_address("  100 N Charles St  ,  Baltimore  ,  MD  21201  ")
 
     assert received[0] == "100 N Charles St , Baltimore , MD 21201"
+
+
+def test_geocode_address_returns_none_on_timeout():
+    def raise_timeout(addr, timeout=10):
+        raise GeocoderTimedOut("timeout")
+
+    with patch("src.utils.geocoding._get_rate_limited_geocoder") as mock_factory:
+        mock_factory.return_value = raise_timeout
+        result = geocode_address("100 N Charles St, Baltimore, MD 21201")
+    assert result is None
+
+
+def test_geocode_address_returns_none_on_service_error():
+    def raise_service_error(addr, timeout=10):
+        raise GeocoderServiceError("unavailable")
+
+    with patch("src.utils.geocoding._get_rate_limited_geocoder") as mock_factory:
+        mock_factory.return_value = raise_service_error
+        result = geocode_address("100 N Charles St, Baltimore, MD 21201")
+    assert result is None
