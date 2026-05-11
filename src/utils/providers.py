@@ -7,7 +7,7 @@ documented to improve clarity and maintainability.
 
 import logging
 from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -400,12 +400,8 @@ def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
     return _validate_provider_data(df)
 
 
-def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
-    """Geocode an address with caching; returns (lat, lon) or None.
-
-    Thin wrapper to preserve prior import behavior.
-    Delegates to the unified geocode_address function.
-    """
+def geocode_address(address: str) -> Optional[Tuple[float, float]]:
+    """Geocode an address with 24hr caching; returns (lat, lon) or None."""
     return _geocode_address(address)
 
 
@@ -420,5 +416,5 @@ __all__ = [
     "validate_address_input",
     "validate_and_clean_coordinates",
     "validate_provider_data",
-    "geocode_address_with_cache",
+    "geocode_address",
 ]

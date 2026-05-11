@@ -8,11 +8,11 @@ from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns
 
 try:
-    from src.utils.geocoding import geocode_address_with_cache
+    from src.utils.geocoding import geocode_address
 
     GEOCODE_AVAILABLE = True
 except Exception:
-    geocode_address_with_cache = None
+    geocode_address = None
     GEOCODE_AVAILABLE = False
 
 # Constants - define once at module level for performance
@@ -301,13 +301,13 @@ if search_clicked:
             st.info(addr_msg)
         st.stop()
 
-    if not GEOCODE_AVAILABLE or geocode_address_with_cache is None:
+    if not GEOCODE_AVAILABLE or geocode_address is None:
         st.error("❌ Geocoding service unavailable. Please contact support.")
         st.info("Technical note: geopy package is not installed")
         st.stop()
 
     with st.spinner("🌍 Looking up address coordinates..."):
-        coords = geocode_address_with_cache(full_address)
+        coords = geocode_address(full_address)
 
     if not coords:
         st.error("❌ Unable to find the address. Please check and try again.")
