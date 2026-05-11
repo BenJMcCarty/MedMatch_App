@@ -17,17 +17,10 @@ from .cleaning import safe_numeric_conversion
 from .cleaning import validate_and_clean_coordinates as _validate_and_clean_coordinates
 from .cleaning import validate_provider_data as _validate_provider_data
 try:
-    from .geocoding import cached_geocode_address as _cached_geocode_address
-    from .geocoding import geocode_address_with_cache as _geocode_address_with_cache
+    from .geocoding import geocode_address as _geocode_address
 except Exception:
     # Graceful fallback when geopy/geocoding is unavailable at import time
-    def _cached_geocode_address(address: str):  # type: ignore[no-redef]
-        st.warning(
-            "Geocoding unavailable at import time. Install 'geopy' to enable address lookups."
-        )
-        return None
-
-    def _geocode_address_with_cache(address: str):  # type: ignore[no-redef]
+    def _geocode_address(address: str):  # type: ignore[no-redef]
         st.warning(
             "Geocoding unavailable at import time. Install 'geopy' to enable address lookups."
         )
@@ -411,16 +404,9 @@ def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
     """Geocode an address with caching; returns (lat, lon) or None.
 
     Thin wrapper to preserve prior import behavior.
+    Delegates to the unified geocode_address function.
     """
-    return _geocode_address_with_cache(address)
-
-
-def cached_geocode_address(address: str) -> Any:
-    """Return a geopy Location (or None) cached for longer TTL.
-
-    Return type is intentionally broad to match geopy Location objects.
-    """
-    return _cached_geocode_address(address)
+    return _geocode_address(address)
 
 
 __all__ = [
@@ -435,5 +421,4 @@ __all__ = [
     "validate_and_clean_coordinates",
     "validate_provider_data",
     "geocode_address_with_cache",
-    "cached_geocode_address",
 ]

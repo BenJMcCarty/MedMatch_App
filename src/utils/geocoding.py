@@ -41,11 +41,17 @@ def _get_rate_limited_geocoder(min_delay_seconds: float = 1.0, max_retries: int 
         return _RATE_LIMITED_GEOCODER
 
 
-@st.cache_data(ttl=3600)
-def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+@st.cache_data(ttl=60 * 60 * 24)
+def geocode_address(address: str) -> Optional[Tuple[float, float]]:
+    """Geocode an address; returns (lat, lon) or None. Cached 24hr.
+
+    Normalizes whitespace before the API call so minor formatting
+    differences hit the same cache entry.
+    """
+    normalized = _normalize_address(address)
     try:
         geocode_fn = _get_rate_limited_geocoder()
-        location = geocode_fn(address)
+        location = geocode_fn(normalized)
         if location:
             return location.latitude, location.longitude
         return None
@@ -57,15 +63,12 @@ def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
         return None
 
 
-@st.cache_data(ttl=60 * 60 * 24)
-def cached_geocode_address(address: str) -> Optional[Any]:
-    try:
-        geocode_fn = _get_rate_limited_geocoder()
-        return geocode_fn(address)
-    except GeocoderUnavailable:
-        return None
-    except Exception:
-        return None
+def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+    """Backward-compatible wrapper for geocode_address.
+
+    Maintained for imports from app.py and other legacy code paths.
+    """
+    return geocode_address(address)
 
 
 def handle_geocoding_error(address: str, error: Exception) -> str:
@@ -79,3 +82,6 @@ def handle_geocoding_error(address: str, error: Exception) -> str:
     if "network" in et or "connection" in et:
         return "🌐 **Network Error**: Cannot connect to the geocoding service. Please check your internet connection."
     return f"❌ **Geocoding Error**: Unable to find location for '{address}'. (Error: {type(error).__name__})"
+
+
+__all__ = ["geocode_address", "geocode_address_with_cache", "handle_geocoding_error"]
