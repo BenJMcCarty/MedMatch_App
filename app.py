@@ -32,11 +32,11 @@ try:
     GEOPY_AVAILABLE = True
 
     # Real implementation provided by the utils package
-    from src.utils.geocoding import geocode_address_with_cache  # type: ignore
+    from src.utils.geocoding import geocode_address  # type: ignore
 except Exception:  # pragma: no cover - environment dependent
     GEOPY_AVAILABLE = False
 
-    def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:  # type: ignore[override]
+    def geocode_address(address: str) -> Optional[Tuple[float, float]]:  # type: ignore[override]
         """Fallback geocode function used when geopy isn't available.
 
         The function intentionally returns None to signal that geocoding
@@ -52,7 +52,7 @@ except Exception:  # pragma: no cover - environment dependent
 
 
 # Symbols exported when this module is imported elsewhere (tests)
-__all__ = ["filter_providers_by_radius", "geocode_address_with_cache", "GEOPY_AVAILABLE", "show_auto_update_status"]
+__all__ = ["filter_providers_by_radius", "geocode_address", "GEOPY_AVAILABLE", "show_auto_update_status"]
 
 
 def show_auto_update_status():
