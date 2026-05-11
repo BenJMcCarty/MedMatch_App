@@ -17,10 +17,15 @@ def _apply_filters(
     available_specialties: list[str],
     available_genders: list[str],
     state: dict,
+    user_lat: float | None = None,
+    user_lon: float | None = None,
 ) -> None:
     """Write extracted filter values into state (typically st.session_state)."""
-    if filters.get("specialty") and filters["specialty"] in available_specialties:
-        state["selected_specialties"] = [filters["specialty"]]
+    if filters.get("specialty"):
+        specialty_lower = filters["specialty"].lower()
+        match = next((s for s in available_specialties if s.lower() == specialty_lower), None)
+        if match:
+            state["selected_specialties"] = [match]
 
     if filters.get("gender") and filters["gender"] in available_genders:
         state["selected_genders"] = [filters["gender"]]
@@ -32,6 +37,10 @@ def _apply_filters(
 
     if filters.get("profile_choice") in _VALID_PROFILE_CHOICES:
         state["profile_choice"] = filters["profile_choice"]
+
+    if user_lat is not None and user_lon is not None:
+        state["user_lat"] = float(user_lat)
+        state["user_lon"] = float(user_lon)
 
 
 def _build_confirmation(filters: dict) -> str:
@@ -93,6 +102,7 @@ def render_search_assistant(specialties: list[str], genders: list[str]) -> None:
             st.session_state["assistant_messages"].append(
                 {"role": "assistant", "content": reply}
             )
+            st.session_state["assistant_auto_search"] = True
         elif result["type"] == "followup":
             st.session_state["assistant_messages"].append(
                 {"role": "assistant", "content": result["data"]}

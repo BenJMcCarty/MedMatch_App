@@ -131,3 +131,35 @@ def test_build_confirmation_unknown_gender_passthrough():
         {"specialty": None, "gender": "NB", "radius": None, "profile_choice": None}
     )
     assert result == "Searching for: NB"
+
+
+def test_apply_filters_writes_lat_lon_when_provided():
+    state = {}
+    _apply_filters(
+        {"specialty": None, "gender": None, "radius": None, "profile_choice": None},
+        SPECIALTIES, GENDERS, state,
+        user_lat=39.2904, user_lon=-76.6122,
+    )
+    assert state["user_lat"] == pytest.approx(39.2904)
+    assert state["user_lon"] == pytest.approx(-76.6122)
+
+
+def test_apply_filters_does_not_write_lat_lon_when_absent():
+    state = {}
+    _apply_filters(
+        {"specialty": None, "gender": None, "radius": None, "profile_choice": None},
+        SPECIALTIES, GENDERS, state,
+    )
+    assert "user_lat" not in state
+    assert "user_lon" not in state
+
+
+def test_apply_filters_ignores_partial_lat_lon():
+    state = {}
+    _apply_filters(
+        {"specialty": None, "gender": None, "radius": None, "profile_choice": None},
+        SPECIALTIES, GENDERS, state,
+        user_lat=39.2904, user_lon=None,
+    )
+    assert "user_lat" not in state
+    assert "user_lon" not in state
