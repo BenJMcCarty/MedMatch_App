@@ -2,7 +2,7 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.utils.llm import chat
+from src.utils.llm import chat, _strip_code_fence
 
 
 def _make_response(text):
@@ -93,3 +93,19 @@ def test_chat_returns_null_location_when_not_mentioned():
 
     assert result["type"] == "filters"
     assert result["data"]["location"] is None
+
+
+def test_strip_code_fence_removes_json_fence():
+    assert _strip_code_fence("```json\n{\"key\": \"value\"}\n```") == '{"key": "value"}'
+
+
+def test_strip_code_fence_removes_plain_fence():
+    assert _strip_code_fence("```\n{\"key\": \"value\"}\n```") == '{"key": "value"}'
+
+
+def test_strip_code_fence_passes_through_plain_json():
+    assert _strip_code_fence('{"key": "value"}') == '{"key": "value"}'
+
+
+def test_strip_code_fence_handles_whitespace():
+    assert _strip_code_fence("  ```json\n{\"x\": 1}\n```  ") == '{"x": 1}'

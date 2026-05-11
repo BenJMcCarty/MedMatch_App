@@ -31,7 +31,7 @@ def chat(messages: list[dict], specialties: list[str]) -> dict:
     """Call Claude to extract filters or get a clarifying follow-up question.
 
     Returns one of:
-      {"type": "filters",  "data": {"specialty": ..., "gender": ..., "radius": ..., "profile_choice": ...}}
+      {"type": "filters",  "data": {"specialty": ..., "gender": ..., "radius": ..., "profile_choice": ..., "location": ...}}
       {"type": "followup", "data": "question string"}
       {"type": "error",    "data": "user-facing error message"}
     """
