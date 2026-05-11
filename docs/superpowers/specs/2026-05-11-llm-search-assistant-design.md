@@ -21,7 +21,7 @@ The only place Claude is called. Stateless — takes a message list, returns a t
 ```python
 def chat(messages: list[dict], specialties: list[str]) -> dict:
     # Returns one of:
-    # {"type": "filters", "data": {"specialty": ..., "gender": ..., "radius": ..., "weight_preset": ...}}
+    # {"type": "filters", "data": {"specialty": ..., "gender": ..., "radius": ..., "profile_choice": ...}}
     # {"type": "followup", "data": "clarifying question string"}
     # {"type": "error",   "data": "user-facing error message"}
 ```

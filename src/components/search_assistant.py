@@ -49,6 +49,12 @@ def _build_confirmation(filters: dict) -> str:
 
 def render_search_assistant(specialties: list[str], genders: list[str]) -> None:
     """Render the LLM search assistant in the sidebar."""
+    api_key = st.secrets.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        st.sidebar.title("🤖 Search Assistant")
+        st.sidebar.warning("⚠️ Assistant unavailable: set ANTHROPIC_API_KEY in .streamlit/secrets.toml")
+        return
+
     if "assistant_messages" not in st.session_state:
         st.session_state["assistant_messages"] = []
     if "assistant_pending" not in st.session_state:
