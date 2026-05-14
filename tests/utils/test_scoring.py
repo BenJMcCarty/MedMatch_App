@@ -176,3 +176,43 @@ def test_specialty_scores_all_ones_when_no_filter():
     })
     scores = _specialty_scores(df, selected_specialties=None)
     assert np.all(scores == 1.0)
+
+
+def test_scored_df_has_proximity_and_experience_columns(three_providers):
+    _, df = recommend_provider(
+        three_providers, distance_weight=0.5, client_weight=0.5, specialty_weight=0.0
+    )
+    assert "_proximity_score" in df.columns
+    assert "_experience_score" in df.columns
+
+
+def test_component_scores_in_range(three_providers):
+    _, df = recommend_provider(
+        three_providers, distance_weight=0.5, client_weight=0.5, specialty_weight=0.0
+    )
+    assert df["_proximity_score"].between(0.0, 1.0).all()
+    assert df["_experience_score"].between(0.0, 1.0).all()
+
+
+def test_component_scores_sum_to_final_score_no_extra_weights(three_providers):
+    """When star_weight=0 and specialty_weight=0, components sum equals Score."""
+    _, df = recommend_provider(
+        three_providers,
+        distance_weight=0.5,
+        client_weight=0.5,
+        star_weight=0.0,
+        specialty_weight=0.0,
+    )
+    for _, row in df.iterrows():
+        component_sum = row["_proximity_score"] + row["_experience_score"]
+        assert component_sum == pytest.approx(row["Score"], abs=0.005)
+
+
+def test_component_scores_rounded_to_three_decimals(three_providers):
+    _, df = recommend_provider(
+        three_providers, distance_weight=0.7, client_weight=0.3, specialty_weight=0.0
+    )
+    for val in df["_proximity_score"]:
+        assert round(val, 3) == pytest.approx(val)
+    for val in df["_experience_score"]:
+        assert round(val, 3) == pytest.approx(val)

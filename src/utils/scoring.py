@@ -178,6 +178,8 @@ def recommend_provider(
         + w_star * rank_star
         + w_spec * spec_scores
     )
+    df["_proximity_score"] = (w_dist * rank_dist).round(3)
+    df["_experience_score"] = (w_client * rank_client).round(3)
 
     if distance_weight > client_weight:
         sort_keys = ["Score", "Distance (Miles)", "Client Count"]
