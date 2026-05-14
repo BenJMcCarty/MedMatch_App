@@ -17,7 +17,11 @@
       "Read(//c/c/Users/Ben/Documents/Data_Science_Projects/MedMatch_App/docs/superpowers/plans/**)",
       "Bash(pytest tests/utils/test_llm.py -v)",
       "Skill(superpowers:systematic-debugging)",
-      "Skill(superpowers:systematic-debugging:*)"
+      "Skill(superpowers:systematic-debugging:*)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:brainstorming:*)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Skill(superpowers:subagent-driven-development:*)"
     ]
   }
 }
