@@ -1,4 +1,4 @@
-"""Step 2: Geocode unique provider addresses via Census batch API and update DuckDB."""
+"""Step 3: Geocode unique provider addresses via Census batch API and update DuckDB."""
 import csv
 import io
 import logging
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import duckdb
+import pandas as pd
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -86,8 +87,14 @@ def _parse_census_response(response_text: str) -> List[dict]:
 def _load_cache(cache_path: Path) -> Dict[str, dict]:
     if not cache_path.exists():
         return {}
+    result = {}
     with open(cache_path, newline="", encoding="utf-8") as f:
-        return {row["full_address"]: row for row in csv.DictReader(f)}
+        for row in csv.DictReader(f):
+            row["latitude"] = float(row["latitude"]) if row.get("latitude") else None
+            row["longitude"] = float(row["longitude"]) if row.get("longitude") else None
+            row["match_score"] = float(row["match_score"]) if row.get("match_score") else None
+            result[row["full_address"]] = row
+    return result
 
 
 def _append_cache(cache_path: Path, results: List[dict]) -> None:
@@ -110,11 +117,12 @@ def _load_zip_centroids(path: Path) -> Dict[str, Tuple[float, float]]:
 
 def _batch_geocode_census(batch: List[Tuple[str, str]]) -> List[dict]:
     """POST one batch to Census Geocoder. batch = [(rec_id, full_address), ...]"""
-    lines = []
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_ALL)
     for rec_id, full_addr in batch:
         street, city, state, zip_code = _parse_full_address(full_addr)
-        lines.append(f'"{rec_id}","{street}","{city}","{state}","{zip_code}"')
-    csv_content = "\n".join(lines)
+        writer.writerow([rec_id, street, city, state, zip_code])
+    csv_content = buf.getvalue()
 
     response = requests.post(
         CENSUS_BATCH_URL,
@@ -128,8 +136,6 @@ def _batch_geocode_census(batch: List[Tuple[str, str]]) -> List[dict]:
 
 def _write_to_duckdb(db_path: Path, results_by_addr: Dict[str, dict]) -> None:
     """Write addresses table and update providers.address_id FK."""
-    import pandas as pd
-
     now = datetime.now(timezone.utc)
     rows = []
     for i, (full_address, r) in enumerate(results_by_addr.items(), start=1):
@@ -247,6 +253,9 @@ def geocode_addresses(
 
         for result in api_results:
             addr = addr_by_id.get(result["rec_id"], "")
+            if not addr:
+                logger.warning(f"Census returned unknown rec_id {result['rec_id']!r}; skipping")
+                continue
             if result["match_status"] == "Match":
                 new_results.append({
                     "full_address": addr,
@@ -278,6 +287,9 @@ def geocode_addresses(
                         "matched_address": "", "geocoded_at": now,
                     })
 
+    # Cache is written before the DB write intentionally: if _write_to_duckdb fails,
+    # re-running the script will serve already-geocoded addresses from cache without
+    # hitting the Census API again.
     if new_results:
         _append_cache(cache_path, new_results)
 
