@@ -347,21 +347,73 @@ with st.expander("📊 How Scoring Works"):
 
     st.markdown(
         """
-    **Scoring Formula:**
+**Scoring Formula:**
 
-    Providers are scored using a weighted combination of factors. **Higher scores indicate better matches.**
-    """
+Providers are scored using a weighted combination of factors. **Higher scores indicate better matches.**
+"""
     )
 
     formula_parts = [f"**Distance** × {alpha:.2f}", f"**Client Count** × {beta:.2f}"]
-
     st.markdown("Score = " + " + ".join(formula_parts))
 
     st.markdown(
         """
-    **What this means:**
-    - Each factor is normalized to a 0-1 scale
-    - Weights are automatically adjusted to total 100%
-    - The provider with the highest score is your best match
-    """
+**What this means:**
+- Each factor is normalized to a 0–1 scale using rank percentiles (robust to outliers)
+- Weights are automatically adjusted to total 100%
+- The provider with the highest score is your best match
+"""
     )
+
+    if (
+        scored_df is not None
+        and "_proximity_score" in scored_df.columns
+        and "_experience_score" in scored_df.columns
+    ):
+        st.markdown("**Provider Score Breakdown:**")
+
+        breakdown_cols = ["Full Name", "_proximity_score", "_experience_score", "Score"]
+        available_breakdown = [c for c in breakdown_cols if c in scored_df.columns]
+        breakdown_df = (
+            scored_df[available_breakdown]
+            .drop_duplicates(subset=["Full Name"], keep="first")
+            .reset_index(drop=True)
+            .copy()
+        )
+        breakdown_df.insert(0, "Rank", range(1, len(breakdown_df) + 1))
+
+        if alpha + beta < 0.99:
+            st.caption(
+                "⚠️ Score includes additional factors (specialty/rating). "
+                "Component scores may not sum to Final Score."
+            )
+
+        st.dataframe(
+            breakdown_df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Rank": st.column_config.NumberColumn("Rank", width="small"),
+                "Full Name": st.column_config.TextColumn("Provider"),
+                "_proximity_score": st.column_config.ProgressColumn(
+                    "Proximity Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.3f",
+                    help="Weighted distance contribution — closer providers score higher",
+                ),
+                "_experience_score": st.column_config.ProgressColumn(
+                    "Experience Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.3f",
+                    help="Weighted experience contribution — more cases handled scores higher",
+                ),
+                "Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.3f",
+                ),
+            },
+        )
