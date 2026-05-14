@@ -227,8 +227,7 @@ data/raw/
 *.csv.bak
 *.xlsx.bak
 
-# DuckDB binary artifacts
-*.duckdb
+# DuckDB write-ahead log (transient, not needed in repo)
 *.duckdb.wal
 
 # Ignore secrets file
