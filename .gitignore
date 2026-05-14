@@ -227,5 +227,9 @@ data/raw/
 *.csv.bak
 *.xlsx.bak
 
+# DuckDB binary artifacts
+*.duckdb
+*.duckdb.wal
+
 # Ignore secrets file
 .streamlit/secrets.toml
