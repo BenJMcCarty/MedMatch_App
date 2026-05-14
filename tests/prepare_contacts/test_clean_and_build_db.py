@@ -50,7 +50,10 @@ def test_filters_to_md_and_target_specialties(raw_csv, db_path):
     with duckdb.connect(str(db_path)) as con:
         count = con.execute("SELECT COUNT(*) FROM providers").fetchone()[0]
     # VA CARDIOLOGY row excluded; 2 MD rows kept
-    assert count == 2
+    assert count == 2, (
+        "Expected 2 MD rows (FAMILY PRACTICE + NEUROLOGY); "
+        "check DEFAULT_SPECIALTIES in 1__Cleaning_Providers_List.py"
+    )
 
 
 def test_address_id_is_null_initially(raw_csv, db_path):

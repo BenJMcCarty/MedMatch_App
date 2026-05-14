@@ -15,12 +15,16 @@ DEFAULT_RAW_PATH = ROOT / "data" / "raw" / "data.csv"
 DEFAULT_DB_PATH = ROOT / "data" / "processed" / "medmatch.duckdb"
 
 
+_cleaning_module = None
+
 def _load_cleaning_module():
-    script = HERE / "1__Cleaning_Providers_List.py"
-    spec = importlib.util.spec_from_file_location("cleaning", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    global _cleaning_module
+    if _cleaning_module is None:
+        script = HERE / "1__Cleaning_Providers_List.py"
+        spec = importlib.util.spec_from_file_location("cleaning", script)
+        _cleaning_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_cleaning_module)
+    return _cleaning_module
 
 
 def build_providers_table(
@@ -61,7 +65,11 @@ def build_providers_table(
         """)
         con.register("df_view", df)
         con.execute("""
-            INSERT INTO providers
+            INSERT INTO providers (
+                ind_pac_id, last_name, first_name, gender, credential,
+                pri_spec, sec_spec_all, telehealth, facility_name, org_pac_id,
+                telephone, full_address, address_id, updated_at
+            )
             SELECT
                 CAST("Ind_PAC_ID"       AS VARCHAR),
                 "Provider Last Name",
