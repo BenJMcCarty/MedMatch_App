@@ -151,8 +151,16 @@ def _apply_filters(
         if matches:
             state["selected_specialties"] = matches
 
-    if filters.get("gender") and filters["gender"] in available_genders:
-        state["selected_genders"] = [filters["gender"]]
+    if filters.get("gender"):
+        raw_gender = filters["gender"]
+        # LLM returns single-letter codes ("M"/"F"); available_genders uses full
+        # words ("Male"/"Female") from the dataframe. Resolve to whichever format
+        # is actually present so the downstream filter receives a matchable value.
+        resolved_gender = _GENDER_LABELS.get(raw_gender, raw_gender)
+        if resolved_gender in available_genders:
+            state["selected_genders"] = [resolved_gender]
+        elif raw_gender in available_genders:
+            state["selected_genders"] = [raw_gender]
 
     if filters.get("radius") is not None:
         radius = int(filters["radius"])

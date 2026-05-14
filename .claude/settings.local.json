@@ -15,7 +15,9 @@
       "Bash(python -m pytest tests/components/test_search_assistant.py -v)",
       "Bash(cd \"/c/Users/Ben/Documents/Data_Science_Projects/MedMatch_App\" && grep \"| \\\\`src/utils/llm.py\\\\`\" docs/superpowers/plans/2026-05-11-chatbot-first-search.md)",
       "Read(//c/c/Users/Ben/Documents/Data_Science_Projects/MedMatch_App/docs/superpowers/plans/**)",
-      "Bash(pytest tests/utils/test_llm.py -v)"
+      "Bash(pytest tests/utils/test_llm.py -v)",
+      "Skill(superpowers:systematic-debugging)",
+      "Skill(superpowers:systematic-debugging:*)"
     ]
   }
 }

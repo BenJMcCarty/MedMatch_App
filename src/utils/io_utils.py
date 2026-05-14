@@ -44,8 +44,7 @@ def format_phone_number(phone):
         # Handle numbers with leading 1
         return f"({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
     else:
-        # Return original if we can't format it properly
-        return phone
+        return str(phone) if phone is not None else None
 
 
 def get_word_bytes(best_provider: pd.Series) -> bytes:
