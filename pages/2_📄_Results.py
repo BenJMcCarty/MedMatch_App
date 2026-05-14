@@ -374,46 +374,52 @@ Providers are scored using a weighted combination of factors. **Higher scores in
 
         breakdown_cols = ["Full Name", "_proximity_score", "_experience_score", "Score"]
         available_breakdown = [c for c in breakdown_cols if c in scored_df.columns]
+
+        # Fix 1: Sort by Score (if available) before assigning Rank to ensure rank corresponds to score order
+        sort_col = "Score" if "Score" in available_breakdown else None
         breakdown_df = (
             scored_df[available_breakdown]
-            .drop_duplicates(subset=["Full Name"], keep="first")
+            .drop_duplicates(subset=[c for c in ["Full Name"] if c in available_breakdown] or None, keep="first")
+            .pipe(lambda df: df.sort_values(by=sort_col, ascending=False) if sort_col else df)
             .reset_index(drop=True)
             .copy()
         )
         breakdown_df.insert(0, "Rank", range(1, len(breakdown_df) + 1))
 
-        if alpha + beta < 0.99:
-            st.caption(
-                "⚠️ Score includes additional factors (specialty/rating). "
-                "Component scores may not sum to Final Score."
-            )
+        # Fix 2: Guard against empty DataFrame
+        if not breakdown_df.empty:
+            if alpha + beta < 0.99:
+                st.caption(
+                    "⚠️ Score includes additional factors (specialty/rating). "
+                    "Component scores may not sum to Final Score."
+                )
 
-        st.dataframe(
-            breakdown_df,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Rank": st.column_config.NumberColumn("Rank", width="small"),
-                "Full Name": st.column_config.TextColumn("Provider"),
-                "_proximity_score": st.column_config.ProgressColumn(
-                    "Proximity Score",
-                    min_value=0.0,
-                    max_value=1.0,
-                    format="%.3f",
-                    help="Weighted distance contribution — closer providers score higher",
-                ),
-                "_experience_score": st.column_config.ProgressColumn(
-                    "Experience Score",
-                    min_value=0.0,
-                    max_value=1.0,
-                    format="%.3f",
-                    help="Weighted experience contribution — more cases handled scores higher",
-                ),
-                "Score": st.column_config.ProgressColumn(
-                    "Final Score",
-                    min_value=0.0,
-                    max_value=1.0,
-                    format="%.3f",
-                ),
-            },
-        )
+            st.dataframe(
+                breakdown_df,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Rank": st.column_config.NumberColumn("Rank", width="small"),
+                    "Full Name": st.column_config.TextColumn("Provider"),
+                    "_proximity_score": st.column_config.ProgressColumn(
+                        "Proximity Score",
+                        min_value=0.0,
+                        max_value=1.0,
+                        format="%.3f",
+                        help="Weighted distance contribution — closer providers score higher",
+                    ),
+                    "_experience_score": st.column_config.ProgressColumn(
+                        "Experience Score",
+                        min_value=0.0,
+                        max_value=1.0,
+                        format="%.3f",
+                        help="Weighted experience contribution — more cases handled scores higher",
+                    ),
+                    "Score": st.column_config.ProgressColumn(
+                        "Final Score",
+                        min_value=0.0,
+                        max_value=1.0,
+                        format="%.3f",
+                    ),
+                },
+            )
