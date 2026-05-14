@@ -11,135 +11,103 @@ st.markdown("### 🔄 Data Status and Cache Management")
 
 st.markdown(
     """
-**High-Level Overview for Non-Technical Users**
+**High-Level Overview**
 
-This page shows a summary of your current referral data loaded from local parquet files
-and provides tools to refresh the cached data.
+Provider data is loaded from `data/processed/medmatch.duckdb` — a DuckDB database built
+from CMS provider data and geocoded via the Census Geocoder batch API.
 
-Data is loaded from local parquet files and cached for optimal performance.
-
+To update data with a fresh CMS export, run the two pipeline scripts from the project root
+(see **Re-run Pipeline** section below).
 """
 )
 
 st.markdown("#### 📊 Current Data Overview")
 
+DB_PATH = Path("data/processed/medmatch.duckdb")
+
 
 @st.cache_data
-def get_data_summary():
-    dim = DataIngestionManager()
+def get_db_summary():
+    if not DB_PATH.exists():
+        return None, None, None
     try:
-        referrals_df = dim.load_data(DataSource.ALL_REFERRALS, show_status=False)
-        providers_df = dim.load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
-        inbound_df = dim.load_data(DataSource.INBOUND_REFERRALS, show_status=False)
-        outbound_df = dim.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
-        return len(referrals_df), len(providers_df), len(inbound_df), len(outbound_df)
+        import duckdb
+        with duckdb.connect(str(DB_PATH), read_only=True) as con:
+            provider_count = con.execute("SELECT COUNT(*) FROM providers").fetchone()[0]
+            address_count = con.execute("SELECT COUNT(*) FROM addresses").fetchone()[0]
+            geocode_counts = con.execute(
+                "SELECT geocode_source, COUNT(*) AS n FROM addresses GROUP BY geocode_source"
+            ).df()
+        return provider_count, address_count, geocode_counts
     except Exception:
-        return None, None, None, None
+        return None, None, None
 
 
-referrals_count, providers_count, inbound_count, outbound_count = get_data_summary()
+provider_count, address_count, geocode_counts = get_db_summary()
 
-if referrals_count is not None and providers_count is not None:
-    col1, col2, col3, col4 = st.columns(4)
+if provider_count is not None:
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📄 Total Referrals", f"{referrals_count:,}")
+        st.metric("👥 Providers", f"{provider_count:,}")
     with col2:
-        st.metric("📥 Inbound", f"{inbound_count:,}")
+        st.metric("📍 Unique Addresses", f"{address_count:,}")
     with col3:
-        st.metric("📤 Outbound", f"{outbound_count:,}")
-    with col4:
-        st.metric("👥 Preferred Providers", f"{providers_count:,}")
+        if geocode_counts is not None and not geocode_counts.empty:
+            census_n = int(geocode_counts.loc[geocode_counts["geocode_source"] == "census", "n"].sum())
+            st.metric("✅ Census Geocoded", f"{census_n:,}")
 else:
-    st.info("Data not yet loaded from local parquet files.")
+    st.info("Database not yet loaded.")
 
 st.markdown("---")
 
-st.markdown("#### 📁 Local Data File")
+st.markdown("#### 📁 Database File")
 
-# Check for parquet file status
-dim = DataIngestionManager()
-data_dir = Path("data/processed")
-combined_file = data_dir / "Combined_Contacts_and_Reviews.parquet"
-
-if combined_file.exists():
-    file_size = combined_file.stat().st_size / (1024 * 1024)  # Convert to MB
-    last_modified = combined_file.stat().st_mtime
+if DB_PATH.exists():
     import datetime
-    mod_time = datetime.datetime.fromtimestamp(last_modified).strftime('%Y-%m-%d %H:%M:%S')
-    
-    st.success(f"✅ Data file found: `Combined_Contacts_and_Reviews.parquet`")
+    file_size = DB_PATH.stat().st_size / (1024 * 1024)
+    mod_time = datetime.datetime.fromtimestamp(DB_PATH.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+    st.success(f"✅ Database found: `{DB_PATH}`")
     col1, col2 = st.columns(2)
     with col1:
         st.caption(f"📊 File size: {file_size:.2f} MB")
     with col2:
         st.caption(f"📅 Last modified: {mod_time}")
+
+    if geocode_counts is not None and not geocode_counts.empty:
+        gcol1, gcol2, gcol3 = st.columns(3)
+        counts = dict(zip(geocode_counts["geocode_source"], geocode_counts["n"]))
+        with gcol1:
+            st.metric("✅ Census geocoded", int(counts.get("census", 0)))
+        with gcol2:
+            st.metric("🔵 ZIP centroid fallback", int(counts.get("fallback_zip", 0)))
+        with gcol3:
+            st.metric("❌ Failed", int(counts.get("failed", 0)))
 else:
-    st.error(f"❌ Data file not found: `Combined_Contacts_and_Reviews.parquet`")
-    st.info("Please ensure the file exists in `data/processed/` directory.")
+    st.error(f"❌ Database not found: `{DB_PATH}`")
+    st.info("Run the pipeline scripts to build the database (see below).")
 
 st.markdown("---")
 
-st.markdown("#### 🔄 Reload Data from Files")
-st.markdown("Click the button below to clear the cache and reload data from local parquet files.")
+st.markdown("#### 🔄 Reload Cached Data")
+st.markdown("Clear the Streamlit cache to force the app to re-read the database on next access.")
 
-if st.button("🔄 **Reload Data**", key="reload_data", type="primary", help="Clear cache and reload data from local parquet files"):
+if st.button("🔄 **Reload Data**", key="reload_data", type="primary"):
     try:
-        with st.spinner("🔄 Reloading data from parquet files..."):
-            # Clear cache to force fresh data loading
+        with st.spinner("Clearing cache..."):
             refresh_data_cache()
-
-            # Use DataIngestionManager to load fresh data
-            dim = DataIngestionManager()
-
-            referrals_df = dim.load_data(DataSource.ALL_REFERRALS, show_status=False)
-            inbound_df = dim.load_data(DataSource.INBOUND_REFERRALS, show_status=False)
-            outbound_df = dim.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
-            providers_df = dim.load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
-
-        # Show results
-        st.success("✅ Successfully reloaded data from local parquet files")
-
-        # Compact metrics display
-        if not referrals_df.empty and not providers_df.empty:
-            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-            with metrics_col1:
-                st.metric(
-                    "📄 Referrals",
-                    f"{len(referrals_df):,}",
-                    delta=f"In: {len(inbound_df):,}, Out: {len(outbound_df):,}",
-                )
-            with metrics_col2:
-                st.metric(
-                    "👥 Providers",
-                    f"{len(providers_df):,}",
-                )
-            with metrics_col3:
-                st.metric(
-                    "📊 Total Records",
-                    f"{len(referrals_df) + len(providers_df):,}",
-                )
-        elif not referrals_df.empty:
-            st.metric("📄 Referrals Loaded", f"{len(referrals_df):,}")
-        elif not providers_df.empty:
-            st.metric("👥 Providers Loaded", f"{len(providers_df):,}")
-        else:
-            st.warning("⚠️ No data was loaded. Please ensure parquet files exist in `data/processed/`.")
-
+        st.success("✅ Cache cleared — the app will reload from the database on next access.")
+        st.rerun()
     except Exception as e:
-        st.error(f"❌ Failed to reload data: {e}")
+        st.error(f"❌ Failed to clear cache: {e}")
         st.code(traceback.format_exc())
 
-st.markdown("---")
-
-st.markdown("#### 🗑️ Clear Cached Data")
-st.markdown("Clear the application cache to force reloading data from parquet files on next access.")
-
-if st.button("🔄 Clear cache and reload data"):
+if st.button("🗑️ Clear cache and reload data"):
     try:
         refresh_data_cache()
-        # Clear any time filter info flags to avoid stale notices
         keys_to_remove = [
-            key for key in list(st.session_state.keys()) if isinstance(key, str) and key.startswith("time_filter_msg_")
+            key for key in list(st.session_state.keys())
+            if isinstance(key, str) and key.startswith("time_filter_msg_")
         ]
         for key in keys_to_remove:
             del st.session_state[key]
@@ -151,106 +119,59 @@ if st.button("🔄 Clear cache and reload data"):
 
 st.markdown("---")
 
-st.markdown("#### 🌐 Validate Provider Coordinates")
+st.markdown("#### 🔧 Re-run Pipeline (Fresh CMS Data)")
 st.markdown(
-    "Geocode each provider's address via Nominatim and compare against CMS coordinates. "
-    "Results are saved back to the parquet file and the cache is refreshed automatically."
-)
-st.warning(
-    "⏱️ A full validation run takes approximately 41 minutes for 2,469 providers "
-    "(Nominatim rate limit: 1 request/second). Use **Validate Unverified Only** for fast incremental updates."
+    "To rebuild the database from a new CMS provider export, run these two scripts "
+    "in order from the project root. Both scripts are idempotent — re-running always "
+    "produces a clean, consistent database."
 )
 
-with st.expander("📍 Validate Provider Coordinates", expanded=False):
-    # Show current geocode coverage
-    try:
-        from pathlib import Path as _Path
-        import pandas as _pd
+st.code(
+    """\
+# Step 1 — Clean raw CMS data and write providers table
+python prepare_contacts/2__clean_and_build_db.py
 
-        _parquet = _Path("data/processed/Combined_Contacts_and_Reviews.parquet")
-        if _parquet.exists():
-            _df_preview = _pd.read_parquet(_parquet)
-            if "geocode_source" in _df_preview.columns:
-                _counts = _df_preview["geocode_source"].value_counts()
-                st.markdown("**Current geocode coverage:**")
-                gcol1, gcol2, gcol3 = st.columns(3)
-                with gcol1:
-                    st.metric("✅ Nominatim verified", int(_counts.get("nominatim", 0)))
-                with gcol2:
-                    st.metric("🔵 CMS only", int(_counts.get("cms", 0)))
-                with gcol3:
-                    st.metric("❌ Failed", int(_counts.get("failed", 0)))
-            else:
-                st.info("No geocode data yet. Run validation to populate.")
-    except Exception:
-        st.info("Could not read current geocode status.")
+# Step 2 — Geocode unique addresses via Census API and update the database
+python prepare_contacts/3__geocode_addresses.py
+""",
+    language="bash",
+)
 
-    col_a, col_b = st.columns(2)
+st.info(
+    "**Step 2 uses a geocode cache** (`data/processed/geocode_cache.csv`) to avoid "
+    "re-hitting the Census API for already-geocoded addresses. For ~2,000 addresses "
+    "the first run takes about 1–2 minutes; subsequent runs are nearly instant for "
+    "previously cached addresses."
+)
 
-    with col_a:
-        run_incremental = st.button(
-            "🔍 Validate Unverified Providers",
-            key="geocode_incremental",
-            help="Skip rows already marked as Nominatim-verified. Fast for incremental updates.",
-        )
+with st.expander("📋 Database Schema"):
+    st.markdown(
+        """
+**`providers`** — one row per provider record
 
-    with col_b:
-        run_full = st.button(
-            "🔄 Re-validate All Providers",
-            key="geocode_full",
-            help="Re-geocode every provider regardless of existing source. Takes ~41 minutes.",
-        )
+| Column | Description |
+|--------|-------------|
+| `ind_pac_id` | CMS Individual PAC ID (primary key) |
+| `last_name`, `first_name` | Provider name |
+| `gender` | M / F |
+| `credential` | Credential / degree |
+| `pri_spec` | Primary specialty |
+| `sec_spec_all` | Secondary specialties |
+| `telehealth` | Telehealth indicator |
+| `facility_name` | Facility / practice name |
+| `telephone` | Provider phone number |
+| `full_address` | Full address string |
+| `address_id` | FK → `addresses.address_id` |
 
-    if run_incremental or run_full:
-        force = run_full
-        import os
-        import tempfile
-        import pandas as pd
-        from pathlib import Path
-        from src.utils.geocoding import geocode_provider_dataframe
-        from src.data.ingestion import refresh_data_cache
+**`addresses`** — one row per unique address
 
-        parquet_path = Path("data/processed/Combined_Contacts_and_Reviews.parquet")
-
-        if not parquet_path.exists():
-            st.error("❌ Parquet file not found. Please upload data first.")
-        else:
-            df = pd.read_parquet(parquet_path)
-            total = len(df)
-            progress_bar = st.progress(0.0, text="Starting geocoding...")
-
-            def _ui_progress(current, total_count, name, source):
-                pct = current / total_count
-                symbol = "✓" if source == "nominatim" else ("~" if source == "cms" else "✗")
-                progress_bar.progress(pct, text=f"[{current}/{total_count}] {name} — {symbol} {source}")
-
-            with st.spinner("Geocoding providers..."):
-                result_df = geocode_provider_dataframe(df, force=force, progress_callback=_ui_progress)
-
-            # Atomic write
-            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".parquet", dir=parquet_path.parent)
-            try:
-                os.close(tmp_fd)
-                result_df.to_parquet(tmp_path, index=False)
-                os.replace(tmp_path, parquet_path)
-            except Exception as exc:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                st.error(f"❌ Failed to save results: {exc}")
-                st.stop()
-
-            refresh_data_cache()
-            progress_bar.progress(1.0, text="Done!")
-
-            final_counts = result_df["geocode_source"].value_counts()
-            nominatim_n = int(final_counts.get("nominatim", 0))
-            cms_n = int(final_counts.get("cms", 0))
-            failed_n = int(final_counts.get("failed", 0))
-
-            st.success(
-                f"✅ Geocoding complete: **{nominatim_n} Nominatim**, "
-                f"**{cms_n} CMS fallback**, **{failed_n} failed**"
-            )
-            st.info("💡 Navigate to the Data Dashboard to see updated coordinate source metrics.")
+| Column | Description |
+|--------|-------------|
+| `address_id` | Integer primary key |
+| `full_address` | Full address string (unique) |
+| `latitude`, `longitude` | Geocoded coordinates |
+| `geocode_source` | `census` / `fallback_zip` / `failed` |
+| `match_type` | Census match type (Exact / Non_Exact / Tie) |
+| `geocoded_at` | Timestamp when geocoded |
+"""
+    )

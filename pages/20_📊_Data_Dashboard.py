@@ -151,18 +151,17 @@ def display_data_quality_dashboard() -> None:
 
         processed_dir = Path("data/processed")
 
-        # Check for parquet files and their metadata
-        parquet_files = {
-            "Cleaned Referrals": processed_dir / "cleaned_all_referrals.parquet",
-            "Cleaned Providers": processed_dir / "cleaned_outbound_referrals.parquet",
-            "Preferred Providers": processed_dir / "cleaned_preferred_providers.parquet",
+        # Check for database and cache files
+        import os
+        data_files = {
+            "Provider Database": processed_dir / "medmatch.duckdb",
+            "Geocode Cache": processed_dir / "geocode_cache.csv",
+            "ZIP Centroids": processed_dir / "zip_centroids.csv",
         }
 
         file_info = []
-        for name, path in parquet_files.items():
+        for name, path in data_files.items():
             if path.exists():
-                import os
-
                 size_mb = os.path.getsize(path) / (1024 * 1024)
                 modified = datetime.fromtimestamp(os.path.getmtime(path))
                 file_info.append(
@@ -205,8 +204,8 @@ def display_data_quality_dashboard() -> None:
             if "geocode_source" in provider_df.columns:
                 source_counts = provider_df["geocode_source"].value_counts()
                 for source_label, col_key in [
-                    ("Coordinates — Nominatim verified", "nominatim"),
-                    ("Coordinates — CMS only", "cms"),
+                    ("Coordinates — Census geocoded", "census"),
+                    ("Coordinates — ZIP centroid fallback", "fallback_zip"),
                     ("Coordinates — Failed", "failed"),
                 ]:
                     count = int(source_counts.get(col_key, 0))
@@ -399,10 +398,10 @@ def display_data_quality_dashboard() -> None:
                     source_fig = go.Figure(
                         data=[
                             go.Pie(
-                                labels=["Nominatim", "CMS", "Failed"],
+                                labels=["Census", "ZIP Centroid", "Failed"],
                                 values=[
-                                    int(source_counts.get("nominatim", 0)),
-                                    int(source_counts.get("cms", 0)),
+                                    int(source_counts.get("census", 0)),
+                                    int(source_counts.get("fallback_zip", 0)),
                                     int(source_counts.get("failed", 0)),
                                 ],
                                 hole=0.4,

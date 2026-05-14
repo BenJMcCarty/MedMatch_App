@@ -90,6 +90,8 @@ from src.data.preparation import process_referral_data
 
 logger = logging.getLogger(__name__)
 
+_DB_PATH = Path("data/processed/medmatch.duckdb")
+
 # Flag to ensure preferred providers warnings are logged only once per app session
 _preferred_providers_warning_logged = False
 
@@ -269,12 +271,85 @@ class DataIngestionManager:
         logger.info(f"Transformed {len(df)} provider records to standard schema")
         return df
 
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _load_from_duckdb_cached(_self, last_modified: float) -> pd.DataFrame:
+        """Load providers JOIN addresses from DuckDB with Streamlit caching."""
+        try:
+            import duckdb
+            with duckdb.connect(str(_DB_PATH), read_only=True) as con:
+                df = con.execute("""
+                    SELECT
+                        TRIM(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')) AS full_name,
+                        p.last_name,
+                        p.first_name,
+                        p.gender,
+                        p.credential,
+                        p.pri_spec AS specialty,
+                        p.sec_spec_all,
+                        p.telephone,
+                        p.full_address,
+                        p.facility_name,
+                        p.ind_pac_id,
+                        CAST(a.latitude AS DOUBLE) AS latitude,
+                        CAST(a.longitude AS DOUBLE) AS longitude,
+                        a.geocode_source,
+                        a.city,
+                        a.state,
+                        a.zip_code,
+                        a.geocoded_at
+                    FROM providers p
+                    LEFT JOIN addresses a ON p.address_id = a.address_id
+                """).df()
+            logger.info(f"Loaded {len(df)} provider rows from DuckDB")
+            return df
+        except Exception as e:
+            logger.error(f"Failed to load from DuckDB: {e}")
+            return pd.DataFrame()
+
+    def _transform_duckdb_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Map DuckDB query columns to the app's standard schema."""
+        df = df.copy()
+        df.rename(columns={
+            'full_name': 'Full Name',
+            'telephone': 'Work Phone Number',
+            'full_address': 'Full Address',
+            'latitude': 'Latitude',
+            'longitude': 'Longitude',
+            'specialty': 'Specialty',
+            'gender': 'Gender',
+            'geocoded_at': 'Last Verified Date',
+        }, inplace=True)
+        df['Work Phone'] = df.get('Work Phone Number', pd.Series(dtype='str'))
+        if 'Gender' in df.columns:
+            df['Gender'] = df['Gender'].map({'M': 'Male', 'F': 'Female'}).fillna(df['Gender'])
+        df['Client Count'] = 0
+        df['referral_type'] = 'provider'
+        for col in ('Latitude', 'Longitude'):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        if 'Last Verified Date' in df.columns:
+            df['Last Verified Date'] = pd.to_datetime(df['Last Verified Date'], errors='coerce')
+        return df
+
+    def _try_load_from_duckdb(self, source: DataSource) -> Optional[pd.DataFrame]:
+        """Return a DuckDB-sourced provider DataFrame, or None if unavailable."""
+        if source != DataSource.PROVIDER_DATA:
+            return None
+        if not _DB_PATH.exists():
+            logger.warning(f"DuckDB not found at {_DB_PATH}")
+            return None
+        last_modified = _DB_PATH.stat().st_mtime
+        df = self._load_from_duckdb_cached(last_modified)
+        if df.empty:
+            return None
+        return self._transform_duckdb_data(df)
+
     def _load_and_process_data(self, source: DataSource) -> pd.DataFrame:
         """
-        Load data from local parquet file and process it into a clean DataFrame.
+        Load data from DuckDB (provider data) or local parquet file and process it.
 
-        This method handles the complete pipeline from parquet file to processed DataFrame,
-        cached in Streamlit's cache system.
+        For PROVIDER_DATA, tries DuckDB first and falls back to parquet.
+        All other sources load from parquet directly.
 
         Args:
             source: Data source to load and process
@@ -282,17 +357,19 @@ class DataIngestionManager:
         Returns:
             Processed DataFrame or empty DataFrame if processing fails
         """
+        # Primary path: DuckDB for provider data
+        duckdb_df = self._try_load_from_duckdb(source)
+        if duckdb_df is not None:
+            return self._process_provider_data(duckdb_df)
+
+        # Fallback: parquet file
         try:
-            # Get parquet file path
             file_path = self._get_parquet_file_path(source)
             if not file_path:
-                logger.error(f"No parquet file available for {source.value}")
+                logger.error(f"No data available for {source.value}")
                 return pd.DataFrame()
 
-            # Get file modification time for cache invalidation
             last_modified = file_path.stat().st_mtime
-
-            # Use the cached processing method with file path and modification time as cache keys
             return self._load_and_process_data_cached(
                 source, str(file_path), last_modified
             )
